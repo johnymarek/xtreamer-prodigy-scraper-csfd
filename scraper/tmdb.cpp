@@ -7,9 +7,9 @@
 int ParseXMLSearch(const char * xml, struct SearchResult * p)
 {
 	bool ret;
-	TiXmlDocument doc();
+	TiXmlDocument doc(xml);
 printf ("xml:%s\n",xml);
-	ret = doc.LoadFile(xml);
+	ret = doc.LoadFile();
 /*
 	if (!ret) {
 		return -1;

@@ -35,6 +35,9 @@ void RemoveString(string &param, const string start, const string end=""){
 			param.erase(pos_b,start.length());
 	}
 }
+#define interest_name "<h1>(.*)" 
+#define interest_id "<a href=\"/film/([^/]*)/zajimavosti/"
+#define interest_year "<p class=\"origin\">[^,]*, ([^,]*),"
 int ParseInfo(const char * html, struct InfoResult * p)
 {
 	bool ret;
@@ -49,7 +52,7 @@ int ParseInfo(const char * html, struct InfoResult * p)
 	int cover_i=0;
 	regmatch_t pmatch[3];
 //Regular expressions
-	char interest_name[]="<h1>(.*)";
+	//char interest_name[]="<h1>(.*)";
 	char interest_overview_help1[]="<h3>Obsah </h3>";
 	char interest_overview_help2[]="</li>";
 	char interest_overview[]="<p>.* (.+)</p>";
@@ -61,7 +64,7 @@ int ParseInfo(const char * html, struct InfoResult * p)
 	char interest_cover[]="url\\('(.*)'\\)";
 	char interest_cover_help1[]="<h3>Plakáty</h3>";
 	char interest_cover_help2[]="</tr>";
-	char interest_year[]="<p class=\"origin\">[^,]*, ([^,]*),";
+	//char interest_year[]="<p class=\"origin\">[^,]*, ([^,]*),";
 	char interest_director_help1[]="<h4>Režie:</h4>";
 	char interest_director_help2[]="</span>";
 	regex_t re_name;
@@ -241,43 +244,29 @@ printf("Error analyzing regular expression '%s': %s.\n", interest_header, err_ms
 int ParseSearch(const char * html, struct SearchResult * p)
 {
 	bool ret;
-	string line;
+	string line,found;
 	ifstream myfile(html);
 	regex_t myre1,myre2,myre3,myre4;
+	regex_t re_id;
+	regex_t re_name;
+	regex_t re_year;
 	int err;
 	char err_msg[MAX_ERR_LENGTH];
 	char interest_header[]="<h2 class=\"header\">Filmy</h2>";
 	char interest_item[]="<h3 class=\"subject\"><a href=\"/film/(.*)/\" .*>(.*)</a>";
-	char interest_year[]="<p>.* (.+)</p>";
+	char interest_year_s[]="<p>.* (.+)</p>";
 	char interest_footer[]="</ul>";
 	char movie_item[]="<li>";
 	int state=0;
 	int n=0;
 	regmatch_t pmatch[3];
-/*
-	1 .. movies section
-	0 .. movies section not found yet
- */
-	if ( (err = regcomp(&myre1, interest_header, REG_EXTENDED)) != 0 ) {
-		regerror(err, &myre1, err_msg, MAX_ERR_LENGTH);
-		printf("Error analyzing regular expression '%s': %s.\n", interest_header, err_msg);
-		return -1;
-	}
-	if ( (err = regcomp(&myre2, interest_item, REG_EXTENDED)) != 0 ) {
-		regerror(err, &myre2, err_msg, MAX_ERR_LENGTH);
-		printf("Error analyzing regular expression '%s': %s.\n", interest_item, err_msg);
-		return -1;
-	}
-	if ( (err = regcomp(&myre3, interest_year, REG_EXTENDED)) != 0 ) {
-		regerror(err, &myre3, err_msg, MAX_ERR_LENGTH);
-		printf("Error analyzing regular expression '%s': %s.\n", interest_year, err_msg);
-		return -1;
-	}
-	if ( (err = regcomp(&myre4, interest_footer, REG_EXTENDED)) != 0 ) {
-		regerror(err, &myre4, err_msg, MAX_ERR_LENGTH);
-		printf("Error analyzing regular expression '%s': %s.\n", interest_footer, err_msg);
-		return -1;
-	}
+	if ( (err = regcomp(&myre1, interest_header, REG_EXTENDED)) != 0 ) { return -1; }
+	if ( (err = regcomp(&myre2, interest_item, REG_EXTENDED)) != 0 ) { return -1; }
+	if ( (err = regcomp(&myre3, interest_year_s, REG_EXTENDED)) != 0 ) { return -1; } 
+	if ( (err = regcomp(&myre4, interest_footer, REG_EXTENDED)) != 0 ) { return -1; }
+	if ( (err = regcomp(&re_id, interest_id, REG_EXTENDED)) != 0 ) return -1;
+	if ( (err = regcomp(&re_name, interest_name, REG_EXTENDED)) != 0 ) return -1; 
+	if ( (err = regcomp(&re_year, interest_year, REG_EXTENDED)) != 0 ) return -1; 
 	if (myfile.is_open())
 	{
 		while ( myfile.good() )
@@ -285,14 +274,15 @@ int ParseSearch(const char * html, struct SearchResult * p)
 			getline (myfile,line);
 			if (state==0){
 //Finding section with movies
-				if ( (err = regexec(&myre1, line.c_str(), 0, NULL, 0)) == 0 ) {
-					state=1;
-				}
-				else if ( err != REG_NOMATCH ) {
-					/* this is when errors have been encountered */
-					regerror(err, &myre1, err_msg, MAX_ERR_LENGTH);
-					return -1;
-				}
+				if ( (err = regexec(&myre1, line.c_str(), 0, NULL, 0)) == 0 ) { state=1; }
+				else if ( err != REG_NOMATCH ) { return -1; }
+				if ( (err = regexec(&re_name, line.c_str(), 2, pmatch, 0)) == 0 ) { 
+					found=line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str();
+					//remove UTF 8 spaces
+					RemoveString(found,"\x9");
+					p->results[n].name = strdup(found.c_str());
+					state=2; 
+				} else if ( err != REG_NOMATCH ) { return -1; }
 			}else if (state==1){
 				//Finding section with movies
 				if ( (err = regexec(&myre2, line.c_str(), 3, pmatch, 0)) == 0 ) {
@@ -326,6 +316,14 @@ int ParseSearch(const char * html, struct SearchResult * p)
 					regerror(err, &myre4, err_msg, MAX_ERR_LENGTH);
 					return -1;
 				}
+			}else if (state==2){
+				if ( (err = regexec(&re_year, line.c_str(), 2, pmatch, 0)) == 0 ) { 
+					p->results[n].year = atoi(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
+				} else if ( err != REG_NOMATCH ) { return -1; }
+				if ( (err = regexec(&re_id, line.c_str(), 2, pmatch, 0)) == 0 ) { 
+					p->results[n].id = strdup(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
+					n++;
+				} else if ( err != REG_NOMATCH ) { return -1; }
 			}
 
 		}
@@ -336,6 +334,9 @@ int ParseSearch(const char * html, struct SearchResult * p)
 	regfree(&myre2);
 	regfree(&myre3);
 	regfree(&myre4);
+	regfree(&re_id);
+	regfree(&re_year);
+	regfree(&re_name);
 	p->nResults=n;
 	return n;
 }
