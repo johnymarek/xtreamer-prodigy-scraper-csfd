@@ -49,7 +49,7 @@ $(TMDB): $(LIBNAME) $(TMDB).cpp
 $(CSFD): $(LIBNAME) $(CSFD).cpp
 	$(SHOW_COMMAND)$(CC) $(LDFLAGS) $(CFLAGS) -o $(CSFD) $(CSFD).cpp -L. -lresult -ltinyxml $(FLAGS)
 	$(MYSTRIP) $(CSFD)
-	cp $(CSFD) ../plugin
+	cp $(CSFD) ../plugin_test
 
 $(TOREC): $(LIBNAME) $(TOREC).cpp
 	$(SHOW_COMMAND)$(CC) $(LDFLAGS) $(CFLAGS) -o $(TOREC) $(TOREC).cpp -L. -lresult -ltinyxml
