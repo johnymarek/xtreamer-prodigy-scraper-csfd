@@ -247,12 +247,17 @@ int main(int argc, char ** argv)
 				break;
 		}
 	}
+/*	FILE *file;
+	file=fopen("/tmp/tmdb.params.log","a+");
 	for (int i=0; i<argc; i++) {
-		printf("argv[%d] %s\n", i, argv[i]);
+		fprintf(file,"argv[%d] %s\n", i, argv[i]);
 	}
+	fclose(file);
+*/
 #define LINK	"http://api.themoviedb.org/2.1"
 #define TMPFILE	"/tmp/tmdb.search.xml"
 #define KEY	"cc7cffe5b64245b308fbb769fd3cf013"
+//#define KEY	"54dfc66c547097ec0460ad40da9135cf"
 	char cmd[256];
 	if (do_search)  {
 		/* search movie */

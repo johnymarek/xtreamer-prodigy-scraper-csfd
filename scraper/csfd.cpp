@@ -1,10 +1,8 @@
 /*
  *  csfd.cpp
  *
- *  Created by longmatys <longmatys@gmail.com> on Sat Apr 14 2012.
+ *  Created by longmatys <longmatys@gmail.com>
  *  Useful for retrieving movie data from czech database
- *  Version history:
- *  2012-04-14a ... correct director parse
  */
 
  /* max error message length */
@@ -51,7 +49,7 @@ int ParseInfo(const char * html, struct InfoResult * p)
 	int cover_i=0;
 	regmatch_t pmatch[3];
 //Regular expressions
-	char interest_name[]="<h1>\\s+([^<]*)";
+	char interest_name[]="<h1>(.*)";
 	char interest_overview_help1[]="<h3>Obsah </h3>";
 	char interest_overview_help2[]="</li>";
 	char interest_overview[]="<p>.* (.+)</p>";
@@ -114,7 +112,10 @@ printf("Error analyzing regular expression '%s': %s.\n", interest_header, err_ms
 					/* Only First time error handling - to save my time :)
 					   regerror(err, &myre1, err_msg, MAX_ERR_LENGTH);
 					 */
-					p->name = strdup(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
+					found=line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str();
+					//remove UTF 8 spaces
+					RemoveString(found,"\x9");
+					p->name = strdup(found.c_str());
 				}else if ( err != REG_NOMATCH ) return -1; 
 				//Finding section with movies
 				if ( (err = regexec(&re_overview_help1, line.c_str(), 0, NULL, 0)) == 0 ) state=1;
@@ -179,7 +180,6 @@ printf("Error analyzing regular expression '%s': %s.\n", interest_header, err_ms
 						multiline.replace(0,pos+2,"");
 					}
 					if ((i < JB_SCPR_MAX_ACTOR )and (multiline.length()>0)) p->name_actor[i++] = strdup(multiline.c_str());
-cout<<i<<endl;
 					state=0;
 					multiline="";
 				}
@@ -328,7 +328,6 @@ int ParseSearch(const char * html, struct SearchResult * p)
 				}
 			}
 
-			//cout << line << endl;
 		}
 		myfile.close();
 	}
@@ -370,9 +369,12 @@ int main(int argc, char *argv[]) {
 			    break;
 	    }
     }
+/*	FILE *file;
+	file=fopen("/tmp/csfd.params.log","a+");
 	for (int i=0; i<argc; i++) {
-		printf("argv[%d] %s\n", i, argv[i]);
+		fprintf(file,"argv[%d] %s\n", i, argv[i]);
 	}
+	fclose(file);*/
 #define LINK	"http://www.csfd.cz"
 #define TMPFILE	"/tmp/csfd.search.xml"
 	char cmd[256];
@@ -385,7 +387,6 @@ int main(int argc, char *argv[]) {
 			struct SearchResult result;
 			memset(&result, 0, sizeof(result));
 			if (ParseSearch(TMPFILE, &result) > 0){
-cout << "Generuji" << result.nResults << "," << output << "\n";
 				ret = GenSearchResult(&result, output);
 				/* releasing... */
 				for (int i=0; i<result.nResults; i++) {
