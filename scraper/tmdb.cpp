@@ -7,8 +7,10 @@
 int ParseXMLSearch(const char * xml, struct SearchResult * p)
 {
 	bool ret;
-	TiXmlDocument doc(xml);
-	ret = doc.LoadFile();
+	TiXmlDocument doc();
+printf ("xml:%s\n",xml);
+	ret = doc.LoadFile(xml);
+/*
 	if (!ret) {
 		return -1;
 	}
@@ -17,38 +19,47 @@ int ParseXMLSearch(const char * xml, struct SearchResult * p)
 	TiXmlElement* movie;
 	movies = docHandle.FirstChild("OpenSearchDescription").FirstChild("movies").ToElement();
 	int n = 0;
+	bool konec=0;
+printf("a\n");
 	for (movie = movies->FirstChildElement("movie"); movie != NULL; movie = movie->NextSiblingElement("movie")) {
+printf("b\n");
+
 		if (n < MAX_SEARCH_RESULT) {
 			int res = 0;
-			const char * str;
-			TiXmlElement * item;
+			const char * str=NULL;
+			TiXmlElement * item=NULL;
 
-			item = movie->FirstChildElement("id");
+			//item = movie->FirstChildElement("id");
+printf("c\n");
 			if (item) {
-				str = item->GetText();
+				//str = item->GetText();
 				if (str) {
-					p->results[n].id = strdup(str);
+					//p->results[n].id = strdup(str);
 					res ++;
 				}
 			}
 
-			item = movie->FirstChildElement("name");
+			//item = movie->FirstChildElement("name");
+printf("d\n");
 			if (item) {
-				str = item->GetText();
+				//str = item->GetText();
 				if (str) {
-					p->results[n].name = strdup(str);
+					//p->results[n].name = strdup(str);
+printf("Mam:%s",str);
 					res ++;
 				}
 			}
 
-			item = movie->FirstChildElement("released");
+			//item = movie->FirstChildElement("released");
+printf("e\n");
 			if (item) {
-				str = item->GetText();
+				//str = item->GetText();
 				if (str) {
-					p->results[n].year = atoi(str);
+					//p->results[n].year = atoi(str);
 				}
 			}
 			if (res != 2) {
+printf("f\n");
 				if (p->results[n].name)
 					free(p->results[n].name);
 				if (p->results[n].id)
@@ -56,12 +67,20 @@ int ParseXMLSearch(const char * xml, struct SearchResult * p)
 				printf("[ TMDB ] Parse failed\n");
 				continue;
 			}
+			printf("g%p/%p\n",movie,movie->NextSiblingElement("movie"));
+			if (movie->NextSiblingElement("movie")==NULL){
+				printf("Vim ze jsem na konci\n");
+				konec=true;
+			}
+printf("i\n");
 
 			n++;
 		}
 	}
-	p->nResults = n;
-	return n;
+*/
+printf("k\n");
+	//p->nResults = n;
+	return 0;
 }
 
 int ParseXMLInfo(const char * xml, struct InfoResult * p)
@@ -247,17 +266,12 @@ int main(int argc, char ** argv)
 				break;
 		}
 	}
-/*	FILE *file;
-	file=fopen("/tmp/tmdb.params.log","a+");
 	for (int i=0; i<argc; i++) {
-		fprintf(file,"argv[%d] %s\n", i, argv[i]);
+		printf("argv[%d] %s\n", i, argv[i]);
 	}
-	fclose(file);
-*/
 #define LINK	"http://api.themoviedb.org/2.1"
 #define TMPFILE	"/tmp/tmdb.search.xml"
 #define KEY	"cc7cffe5b64245b308fbb769fd3cf013"
-//#define KEY	"54dfc66c547097ec0460ad40da9135cf"
 	char cmd[256];
 	if (do_search)  {
 		/* search movie */
@@ -265,10 +279,14 @@ int main(int argc, char ** argv)
 		sprintf(cmd, "wget -t 1 -T 30 -nd \"%s/Movie.search/%s/xml/%s/%s\" -O %s", LINK, language, KEY, keyword, TMPFILE);
 		system(cmd);
 		if (access(TMPFILE, F_OK) == 0) {
+printf("1\n");
 			struct SearchResult result;
 			memset(&result, 0, sizeof(result));
-			if (ParseXMLSearch(TMPFILE, &result) > 0) {
+printf("2\n");ParseXMLSearch(TMPFILE, &result); 
+			if (15> 0) {
+printf("3\n");
 				ret = GenSearchResult(&result, output);
+printf("4\n");
 				/* releasing... */
 				for (int i=0; i<result.nResults; i++) {
 					if (result.results[i].name)
@@ -276,6 +294,7 @@ int main(int argc, char ** argv)
 					if (result.results[i].id)
 						free(result.results[i].id);
 				}
+printf("5\n");
 			}
 			unlink(TMPFILE);
 		}
