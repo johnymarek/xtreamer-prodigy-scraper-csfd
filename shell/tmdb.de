@@ -1,0 +1,13 @@
+#!/bin/ash
+args=`getopt l:sk:o: $*`
+set -- $args
+for i; do
+        case "$i" in
+                -l) shift;shift;;
+                -s) shift;param="$param -s";;
+                -k) shift;param="$param -k $1";shift;;
+                -o) shift;param="$param -o $1";shift;;
+        esac
+done
+./tmdb $param -l de
+
