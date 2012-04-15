@@ -241,15 +241,20 @@ printf("Error analyzing regular expression '%s': %s.\n", interest_header, err_ms
 	printf("[ CSFD ] parse done\n");
 	return 0;
 }
+#define STATE_UNKNOWN 0
+#define STATE_MULTIPLE_START 1
+#define STATE_SINGLE_TYPE 2
+#define STATE_MULTIPLE_TYPE 3
 int ParseSearch(const char * html, struct SearchResult * p)
 {
 	bool ret;
 	string line,found;
 	ifstream myfile(html);
-	regex_t myre1,myre2,myre3,myre4;
-	regex_t re_id;
-	regex_t re_name;
-	regex_t re_year;
+	regex_t re_multiple_header,re_multiple_item,interest_single_year,re_multiple_end;
+	regex_t re_single_id;
+	regex_t re_single_name;
+	regex_t re_single_year;
+	regex_t re_multiple_type;
 	int err;
 	char err_msg[MAX_ERR_LENGTH];
 	char interest_header[]="<h2 class=\"header\">Filmy</h2>";
@@ -257,70 +262,63 @@ int ParseSearch(const char * html, struct SearchResult * p)
 	char interest_year_s[]="<p>.* (.+)</p>";
 	char interest_footer[]="</ul>";
 	char movie_item[]="<li>";
-	int state=0;
+	char interest_multiple_results[]="<h1>Vyhledávání</h1>";
+	int state=STATE_UNKNOWN;
 	int n=0;
 	regmatch_t pmatch[3];
-	if ( (err = regcomp(&myre1, interest_header, REG_EXTENDED)) != 0 ) { return -1; }
-	if ( (err = regcomp(&myre2, interest_item, REG_EXTENDED)) != 0 ) { return -1; }
-	if ( (err = regcomp(&myre3, interest_year_s, REG_EXTENDED)) != 0 ) { return -1; } 
-	if ( (err = regcomp(&myre4, interest_footer, REG_EXTENDED)) != 0 ) { return -1; }
-	if ( (err = regcomp(&re_id, interest_id, REG_EXTENDED)) != 0 ) return -1;
-	if ( (err = regcomp(&re_name, interest_name, REG_EXTENDED)) != 0 ) return -1; 
-	if ( (err = regcomp(&re_year, interest_year, REG_EXTENDED)) != 0 ) return -1; 
+	if ( (err = regcomp(&re_multiple_header, interest_header, REG_EXTENDED)) != 0 ) { return -1; }
+	if ( (err = regcomp(&re_multiple_item, interest_item, REG_EXTENDED)) != 0 ) { return -1; }
+	if ( (err = regcomp(&interest_single_year, interest_year_s, REG_EXTENDED)) != 0 ) { return -1; } 
+	if ( (err = regcomp(&re_multiple_end, interest_footer, REG_EXTENDED)) != 0 ) { return -1; }
+	if ( (err = regcomp(&re_single_id, interest_id, REG_EXTENDED)) != 0 ) return -1;
+	if ( (err = regcomp(&re_single_name, interest_name, REG_EXTENDED)) != 0 ) return -1; 
+	if ( (err = regcomp(&re_single_year, interest_year, REG_EXTENDED)) != 0 ) return -1; 
+	if ( (err = regcomp(&re_multiple_type, interest_multiple_results, REG_EXTENDED)) != 0 ) return -1; 
 	if (myfile.is_open())
 	{
 		while ( myfile.good() )
 		{
 			getline (myfile,line);
-			if (state==0){
-//Finding section with movies
-				if ( (err = regexec(&myre1, line.c_str(), 0, NULL, 0)) == 0 ) { state=1; }
-				else if ( err != REG_NOMATCH ) { return -1; }
-				if ( (err = regexec(&re_name, line.c_str(), 2, pmatch, 0)) == 0 ) { 
+			if (state==STATE_UNKNOWN){
+//Determining search result type - single or multiple, determined by h1 header
+				if ( (err = regexec(&re_multiple_type, line.c_str(), 0, NULL, 0)) == 0 ) { 
+					state=STATE_MULTIPLE_TYPE; 
+				} else if ( err != REG_NOMATCH ) { return -1; }
+				else if ( (err = regexec(&re_single_name, line.c_str(), 2, pmatch, 0)) == 0 ) { 
 					found=line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str();
 					//remove UTF 8 spaces
 					RemoveString(found,"\x9");
 					p->results[n].name = strdup(found.c_str());
-					state=2; 
+					state=STATE_SINGLE_TYPE; 
+				}else if ( err != REG_NOMATCH ) { return -1; }
+			}else if (state==STATE_MULTIPLE_TYPE){
+				if ( (err = regexec(&re_multiple_header, line.c_str(), 0, NULL, 0)) == 0 ) { 
+					state=STATE_MULTIPLE_START; 
 				} else if ( err != REG_NOMATCH ) { return -1; }
-			}else if (state==1){
+			}else if (state==STATE_MULTIPLE_START){
 				//Finding section with movies
-				if ( (err = regexec(&myre2, line.c_str(), 3, pmatch, 0)) == 0 ) {
+				if ( (err = regexec(&re_multiple_item, line.c_str(), 3, pmatch, 0)) == 0 ) {
 					if (n < MAX_SEARCH_RESULT) {
 						p->results[n].id = strdup(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
 						p->results[n].name = strdup(line.substr(pmatch[2].rm_so,pmatch[2].rm_eo-pmatch[2].rm_so).c_str());
 					}
-					state=1;
-				}
-				else if ( err != REG_NOMATCH ) {
-					/* this is when errors have been encountered */
-					regerror(err, &myre2, err_msg, MAX_ERR_LENGTH);
-					return -1;
-				}
-				if ( (err = regexec(&myre3, line.c_str(), 2, pmatch, 0)) == 0 ) {
+				} else if ( err != REG_NOMATCH ) { return -1; }
+				else if ( (err = regexec(&interest_single_year, line.c_str(), 2, pmatch, 0)) == 0 ) {
 					if (n < MAX_SEARCH_RESULT) {
 						p->results[n].year = atoi(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
+						//Year is always last interesting
 						n++;
 					}
+				} else if ( err != REG_NOMATCH ) { return -1; }
+				else if ( (err = regexec(&re_multiple_end, line.c_str(), 0, NULL, 0)) == 0 ) {
+					state=STATE_UNKNOWN;
 				}
-				else if ( err != REG_NOMATCH ) {
-					/* this is when errors have been encountered */
-					regerror(err, &myre3, err_msg, MAX_ERR_LENGTH);
-					return -1;
-				}
-				if ( (err = regexec(&myre4, line.c_str(), 0, NULL, 0)) == 0 ) {
-					state=0;
-				}
-				else if ( err != REG_NOMATCH ) {
-					/* this is when errors have been encountered */
-					regerror(err, &myre4, err_msg, MAX_ERR_LENGTH);
-					return -1;
-				}
-			}else if (state==2){
-				if ( (err = regexec(&re_year, line.c_str(), 2, pmatch, 0)) == 0 ) { 
+				else if ( err != REG_NOMATCH ) { return -1; }
+			}else if (state==STATE_SINGLE_TYPE){
+				if ( (err = regexec(&re_single_year, line.c_str(), 2, pmatch, 0)) == 0 ) { 
 					p->results[n].year = atoi(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
 				} else if ( err != REG_NOMATCH ) { return -1; }
-				if ( (err = regexec(&re_id, line.c_str(), 2, pmatch, 0)) == 0 ) { 
+				if ( (err = regexec(&re_single_id, line.c_str(), 2, pmatch, 0)) == 0 ) { 
 					p->results[n].id = strdup(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
 					n++;
 				} else if ( err != REG_NOMATCH ) { return -1; }
@@ -330,13 +328,14 @@ int ParseSearch(const char * html, struct SearchResult * p)
 		myfile.close();
 	}
 	else cout << "Unable to open file"; 
-	regfree(&myre1);
-	regfree(&myre2);
-	regfree(&myre3);
-	regfree(&myre4);
-	regfree(&re_id);
-	regfree(&re_year);
-	regfree(&re_name);
+	regfree(&re_multiple_header);
+	regfree(&re_multiple_item);
+	regfree(&interest_single_year);
+	regfree(&re_multiple_end);
+	regfree(&re_single_id);
+	regfree(&re_single_year);
+	regfree(&re_single_name);
+	regfree(&re_multiple_type);
 	p->nResults=n;
 	return n;
 }
