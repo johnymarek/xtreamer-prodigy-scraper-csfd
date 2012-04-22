@@ -118,6 +118,7 @@ printf("Error analyzing regular expression '%s': %s.\n", interest_header, err_ms
 					found=line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str();
 					//remove UTF 8 spaces
 					RemoveString(found,"\x9");
+					RemoveString(found,"<",">");
 					p->name = strdup(found.c_str());
 				}else if ( err != REG_NOMATCH ) return -1; 
 				//Finding section with movies

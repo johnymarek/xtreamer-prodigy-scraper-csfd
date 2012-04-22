@@ -28,9 +28,11 @@ CSFD		+= csfd
 
 BINARIES  = $(TMDB) $(TOREC) $(CSFD)
 
-CFLAGS+=-I../lib_file/tinyxml/ 
+#CFLAGS+=-I../lib_file/tinyxml/ 
+CFLAGS+=-I../../libtinyxml-read-only/include -static
 #CFLAGS+=-std=c++0x
-LDFLAGS=-L../lib_file/lib/
+LDFLAGS=-L../../libtinyxml-read-only/lib
+#LDFLAGS=-L../lib_file/lib/
 
 .cpp.o:
 	$(SHOW_COMMAND)$(CC) $(CFLAGS) $(DEBUGFLAG) $(WARNING) -c $*.cpp
