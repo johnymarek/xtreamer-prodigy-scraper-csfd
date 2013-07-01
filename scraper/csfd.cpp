@@ -44,6 +44,7 @@ int ParseInfo(const char * html, struct InfoResult * p)
 	int err;
 	const char * str_notfound = "Not Found";
 	const char * str;
+	char temp_string[1024];
 	string line,multiline,found;
 	ifstream myfile(html);
 	int state=0;
@@ -199,8 +200,11 @@ printf("Error analyzing regular expression '%s': %s.\n", interest_header, err_ms
 						found=line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str();
 						RemoveString(found,"\\");
 						if ((cover_i < JB_SCPR_MAX_IMAGE )and (found.length()>0)){
-							p->cover_preview[cover_i] = strdup(found.c_str());
-							p->cover[cover_i++] = strdup(found.c_str());
+							sprintf(temp_string,"http:%s",found.c_str());
+							//p->cover_preview[cover_i] = strdup(found.c_str());
+							p->cover_preview[cover_i] = strdup(temp_string);
+							//p->cover[cover_i++] = strdup(found.c_str());
+							p->cover[cover_i++] = strdup(temp_string);
 						}
 					} else if ( err != REG_NOMATCH ) return -1; 
 				}
@@ -377,12 +381,13 @@ int main(int argc, char *argv[]) {
 	}
 	fclose(file);*/
 #define LINK	"http://www.csfd.cz"
-#define TMPFILE	"/tmp/csfd.search.xml"
+#define TMPFILE	"/var/tmp/csfd.search.xml"
 	char cmd[256];
 	if (do_search)  {
 		/* search movie */
 		printf("keyword: %s\n", keyword);
 		sprintf(cmd, "wget -t 1 -T 30 -nd \"%s/hledat/?q=%s\" -O %s", LINK, keyword, TMPFILE);
+		printf("%s\n",cmd);
 		system(cmd);
 		if (access(TMPFILE, F_OK) == 0) {
 			struct SearchResult result;
@@ -403,6 +408,7 @@ int main(int argc, char *argv[]) {
 	else {
 		/* get movie info, and will pass the id via keywoard */
 		sprintf(cmd, "wget -t 1 -T 30 -nd \"%s/film/%s/\" -O %s", LINK, keyword, TMPFILE);
+		printf("%s\n",cmd);
 		system(cmd);
 		if (access(TMPFILE, F_OK) == 0) {
 			struct InfoResult result;
