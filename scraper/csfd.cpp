@@ -199,12 +199,17 @@ printf("Error analyzing regular expression '%s': %s.\n", interest_header, err_ms
 					if ( (err = regexec(&re_cover, line.c_str(), 2, pmatch, 0)) == 0 ){ 
 						found=line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str();
 						RemoveString(found,"\\");
+						if (found.find("http", 0, 4) != 0) {
+							// Doplneni chybejiciho "http:" pokud chybi
+							found.insert(0,"http:");
+						}
 						if ((cover_i < JB_SCPR_MAX_IMAGE )and (found.length()>0)){
-							sprintf(temp_string,"http:%s",found.c_str());
-							//p->cover_preview[cover_i] = strdup(found.c_str());
-							p->cover_preview[cover_i] = strdup(temp_string);
-							//p->cover[cover_i++] = strdup(found.c_str());
-							p->cover[cover_i++] = strdup(temp_string);
+							if (pos = found.find_last_of("?")) {
+								// Plny obrazek je bez cehosi a la "?h180" na konci url. Aspon by mel byt.
+								found.erase(pos,found.length());
+							}
+							p->cover_preview[cover_i] = strdup(found.c_str());
+							p->cover[cover_i++] = strdup(found.c_str());
 						}
 					} else if ( err != REG_NOMATCH ) return -1; 
 				}
