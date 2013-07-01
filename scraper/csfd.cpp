@@ -9,6 +9,11 @@
 #define MAX_ERR_LENGTH 80
  /* max length of a line of text from stdin */
 #define MAX_TXT_LENGTH 100000
+#define STATE_UNKNOWN 0
+#define STATE_MULTIPLE_START 1
+#define STATE_SINGLE_TYPE 2
+#define STATE_MULTIPLE_TYPE 3
+#define STATE_FINDING_NAME 5
 
 #include <unistd.h>
 #include <stdio.h>
@@ -36,6 +41,7 @@ void RemoveString(string &param, const string start, const string end=""){
 	}
 }
 #define interest_name "<h1>(.*)" 
+#define interest_name_help "([a-zA-Z0-9].*)" 
 #define interest_id "<a href=\"/film/([^/]*)/zajimavosti/"
 #define interest_year "<p class=\"origin\">[^,]*, ([^,]*),"
 int ParseInfo(const char * html, struct InfoResult * p)
@@ -69,6 +75,7 @@ int ParseInfo(const char * html, struct InfoResult * p)
 	char interest_director_help1[]="<h4>Režie:</h4>";
 	char interest_director_help2[]="</span>";
 	regex_t re_name;
+	regex_t re_name_help;
 	regex_t re_overview_help1;
 	regex_t re_overview_help2;
 	regex_t re_overview;
@@ -93,6 +100,7 @@ printf("Error analyzing regular expression '%s': %s.\n", interest_header, err_ms
 	}
 	if ( (err = regcomp(&re_overview_help2, interest_overview_help2, REG_EXTENDED)) != 0 ) return -1;
 	if ( (err = regcomp(&re_name, interest_name, REG_EXTENDED)) != 0 ) return -1; 
+	if ( (err = regcomp(&re_name_help, interest_name_help, REG_EXTENDED)) != 0 ) return -1; 
 	if ( (err = regcomp(&re_overview, interest_overview, REG_EXTENDED)) != 0 ) return -1; 
 	if ( (err = regcomp(&re_rate, interest_rate, REG_EXTENDED)) != 0 ) return -1; 
 	if ( (err = regcomp(&re_votes, interest_votes, REG_EXTENDED)) != 0 ) return -1; 
@@ -110,17 +118,20 @@ printf("Error analyzing regular expression '%s': %s.\n", interest_header, err_ms
 		while ( myfile.good() )
 		{
 			getline (myfile,line);
+//printf("DEBUG:Prochazim (stav:%d),%s\n",state,line.c_str());
 			if (state==0){
 				//Finding movie name
 				if ( (err = regexec(&re_name, line.c_str(), 2, pmatch, 0)) == 0 ){
 					/* Only First time error handling - to save my time :)
 					   regerror(err, &myre1, err_msg, MAX_ERR_LENGTH);
 					 */
-					found=line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str();
+					state=STATE_FINDING_NAME;
+//printf("DEBUG:Snazim se najit nazev %d\n", state);
+					//found=line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str();
 					//remove UTF 8 spaces
-					RemoveString(found,"\x9");
-					RemoveString(found,"<",">");
-					p->name = strdup(found.c_str());
+					//RemoveString(found,"\x9");
+					//RemoveString(found,"<",">");
+					//p->name = strdup(found.c_str());
 				}else if ( err != REG_NOMATCH ) return -1; 
 				//Finding section with movies
 				if ( (err = regexec(&re_overview_help1, line.c_str(), 0, NULL, 0)) == 0 ) state=1;
@@ -226,6 +237,18 @@ printf("Error analyzing regular expression '%s': %s.\n", interest_header, err_ms
 				}
 				else if ( err != REG_NOMATCH ) return -1; 
 				else  multiline+=line;
+			}else if (state==STATE_FINDING_NAME){
+//printf("DEBUG:Snazim se najit nazev 2\n");
+
+				if ( (err = regexec(&re_name_help, line.c_str(), 2, pmatch, 0)) == 0 ){
+//printf("DEBUG:Asi mam nazev %s\n",line.c_str());
+					state=STATE_UNKNOWN;
+					found=line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str();
+					//remove UTF 8 spaces
+					RemoveString(found,"\x9");
+					RemoveString(found,"<",">");
+					p->name = strdup(found.c_str());
+				}
 			}
 
 
@@ -234,6 +257,7 @@ printf("Error analyzing regular expression '%s': %s.\n", interest_header, err_ms
 	}
 	else cout << "Unable to open file"; 
 	regfree(&re_name);
+	regfree(&re_name_help);
 	regfree(&re_overview_help1);
 	regfree(&re_overview_help2);
 	regfree(&re_overview);
@@ -251,10 +275,6 @@ printf("Error analyzing regular expression '%s': %s.\n", interest_header, err_ms
 	printf("[ CSFD ] parse done\n");
 	return 0;
 }
-#define STATE_UNKNOWN 0
-#define STATE_MULTIPLE_START 1
-#define STATE_SINGLE_TYPE 2
-#define STATE_MULTIPLE_TYPE 3
 int ParseSearch(const char * html, struct SearchResult * p)
 {
 	bool ret;
