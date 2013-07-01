@@ -381,7 +381,7 @@ int main(int argc, char *argv[]) {
 	}
 	fclose(file);*/
 #define LINK	"http://www.csfd.cz"
-#define TMPFILE	"/var/tmp/csfd.search.xml"
+#define TMPFILE	"/tmp/csfd.search.xml"
 	char cmd[256];
 	if (do_search)  {
 		/* search movie */
