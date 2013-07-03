@@ -114,7 +114,7 @@ vector <string> split(const string s, const string delimiters, split::empties_t 
 #define i_covers_strip "url\\('(.*)\\?h180'\\)"
 #define i_overview_begin "<h3>Obsah </h3>"
 #define i_overview_end "</li>"
-#define i_overview_strip "alt=\"Odrážka\"[[:space:]]*class=\"dot( hidden)?\"/>[[:space:]]*(.*)<span class=\"source\">(.*)</span>"
+#define i_overview_strip "alt=\"Odrážka\"[[:space:]]*class=\"dot( hidden)?\"/>[[:space:]]*(.*)<span class=\"source( user)?\">(.*)</span>"
 #define i_fanart_begin "Galerie\t<span class=\"count\">"
 #define i_fanart_end "<div class=\"footer\"></div>"
 #define i_fanart_strip "<div class=\"photo\" style=\".*background-image: url\\('(.*)\\?w700'\\);"
@@ -129,8 +129,9 @@ int ParseInfo(const char * html, struct InfoResult * p)
 	int cover_i=0;
 	int fanart_i=0;
 
-	regmatch_t pmatch[4];
+	regmatch_t pmatch[5];
 
+	regex_t re_cover_strip;
 	regex_t re_name_strip;
 	regex_t re_genre;
 	regex_t re_year;
@@ -141,6 +142,7 @@ int ParseInfo(const char * html, struct InfoResult * p)
 	regex_t re_fanart_strip;
 	regex_t re_rate;
 
+	if (regcomp(&re_cover_strip, i_cover_strip, REG_EXTENDED)) { return -1; }
 	if (regcomp(&re_name_strip, i_name_strip, REG_EXTENDED)) { return -1; }
 	if (regcomp(&re_genre, i_genre, REG_EXTENDED)) { return -1; }
 	if (regcomp(&re_year, i_year, REG_EXTENDED)) { return -1; }
@@ -245,11 +247,12 @@ int ParseInfo(const char * html, struct InfoResult * p)
 				case I_GETTING_OVERVIEW:
 					temp_string.append(line);
 					if (line.find(i_overview_end) != string::npos) {
-						if (regexec(&re_overview_strip, temp_string.c_str(), 4, pmatch, 0) == 0) {
+						if (regexec(&re_overview_strip, temp_string.c_str(), 5, pmatch, 0) == 0) {
 							string s = temp_string.substr(pmatch[2].rm_so,pmatch[2].rm_eo-pmatch[2].rm_so);
-							s.append(temp_string.substr(pmatch[3].rm_so,pmatch[3].rm_eo-pmatch[3].rm_so));
+							s.append(temp_string.substr(pmatch[4].rm_so,pmatch[4].rm_eo-pmatch[4].rm_so));
 							s = RemoveString(s, "\r"); // Normalne, fakt se ^M v 'overview' objevil :-O
 							s = RemoveString(s, "\t"); // Tohle je pro sichr, kdyz tam muze bejt ten '\r' tak se uz ani nedivim
+							s = RemoveString(s, "<", ">"); // Dobra, odstraneni vseruznejch HTML tagu co tam nemaj co delat
 							p->overview = strdup(s.c_str());
 							p->summary = strdup(s.c_str());
 						}
@@ -294,7 +297,7 @@ int ParseInfo(const char * html, struct InfoResult * p)
 
 	else cout << "Unable to open file";
 
-	printf("[ CSFD ] parse done\n");
+	printf("[ CSFD ] parse done (%d)\n", state);
 	return 0;
 }
 
