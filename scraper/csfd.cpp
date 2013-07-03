@@ -37,21 +37,22 @@ using namespace std;
  * a I_GETTING* je pro ziskavani radek kde se potrebna data nachazeji
  */
 #define I_UNKNOWN		0
-#define I_LOOK4NAME		1
-#define I_GETTING_NAME		2
-#define I_LOOK4GENRE		3
-#define I_LOOK4YEAR		4
-#define I_LOOK4DIRECTOR		5
-#define I_GETTING_DIRECTOR	6
-#define I_LOOK4ACTORS		7
-#define I_GETTING_ACTORS	8
-#define I_LOOK4COVERS		9
-#define I_GETTING_COVERS	10
-#define I_LOOK4OVERVIEW		11
-#define I_GETTING_OVERVIEW	12
-#define I_LOOK4FANART		13
-#define I_GETTING_FANART	14
-#define I_LOOK4RATE		15
+#define I_LOOK4POSTER		1
+#define I_LOOK4NAME		2
+#define I_GETTING_NAME		3
+#define I_LOOK4GENRE		4
+#define I_LOOK4YEAR		5
+#define I_LOOK4DIRECTOR		6
+#define I_GETTING_DIRECTOR	7
+#define I_LOOK4ACTORS		8
+#define I_GETTING_ACTORS	9
+#define I_LOOK4COVERS		10
+#define I_GETTING_COVERS	11
+#define I_LOOK4OVERVIEW		12
+#define I_GETTING_OVERVIEW	13
+#define I_LOOK4FANART		14
+#define I_GETTING_FANART	15
+#define I_LOOK4RATE		16
 
 #define I_HOTOVO		255
 
@@ -98,6 +99,7 @@ vector <string> split(const string s, const string delimiters, split::empties_t 
 // *_begin a *_end jsou pouzity pro find(), nikoliv pro regexp. Pro regexp jsou *_strip
 #define i_results_begin "<div class=\"page-content\" id=\"pg-web-film\">"
 // #define i_results_end "<div class=\"navigation\">"  // Tak, kvuli procentuelnimu hodnoceni to musim dojet az do konce
+#define i_poster "<img src=\"(.*)\\?h180\" alt=\"poster\" class=\"film-poster\".*/>"
 #define i_name_begin "<h1>"
 #define i_name_end "</h1>"
 #define i_name_strip "<h1>[[:space:]]*([^[:space:]].*[^[:space:]])[[:space:]]*</h1>"
@@ -132,6 +134,7 @@ int ParseInfo(const char * html, struct InfoResult * p)
 	regmatch_t pmatch[5];
 
 	regex_t re_name_strip;
+	regex_t re_poster;
 	regex_t re_genre;
 	regex_t re_year;
 	regex_t re_director_strip;
@@ -141,6 +144,7 @@ int ParseInfo(const char * html, struct InfoResult * p)
 	regex_t re_fanart_strip;
 	regex_t re_rate;
 
+	if (regcomp(&re_poster, i_poster, REG_EXTENDED)) { return -1; }
 	if (regcomp(&re_name_strip, i_name_strip, REG_EXTENDED)) { return -1; }
 	if (regcomp(&re_genre, i_genre, REG_EXTENDED)) { return -1; }
 	if (regcomp(&re_year, i_year, REG_EXTENDED)) { return -1; }
@@ -157,6 +161,16 @@ int ParseInfo(const char * html, struct InfoResult * p)
 			getline(myfile,line);
 
 			switch (state) {
+				case I_LOOK4POSTER:
+					if (regexec(&re_poster, line.c_str(), 2, pmatch, 0) == 0) {
+						temp_string = line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so);
+						if (temp_string.find("http", 0, 4) != 0)
+							temp_string.insert(0,"http:");
+						p->cover_preview[cover_i] = strdup(temp_string.c_str());
+						p->cover[cover_i++] = strdup(temp_string.c_str());
+						state = I_LOOK4NAME;
+					}
+					break;
 				case I_LOOK4NAME:
 					if (line.find(i_name_begin) != string::npos) {
 						temp_string = line;
@@ -220,6 +234,11 @@ int ParseInfo(const char * html, struct InfoResult * p)
 				case I_LOOK4COVERS:
 					if (line.find(i_covers_begin) != string::npos)
 						state = I_GETTING_COVERS;
+					// Pozor, covers se vubec nemusi vyskytovat. Koukam zaroven i na zacatek overview
+					if (line.find(i_overview_begin) != string::npos) {
+						temp_string.clear();
+						state = I_GETTING_OVERVIEW;
+					}
 					break;
 				case I_GETTING_COVERS:
 					if (line.find(i_covers_end) != string::npos) {
@@ -283,7 +302,7 @@ int ParseInfo(const char * html, struct InfoResult * p)
 					break;
 				default: // Vcetne I_UNKNOWN
 					if (line.find(i_results_begin) != string::npos)
-						state = I_LOOK4NAME;
+						state = I_LOOK4POSTER;
 			}
 
 			if (state == I_HOTOVO)
@@ -294,6 +313,8 @@ int ParseInfo(const char * html, struct InfoResult * p)
 	}
 
 	else cout << "Unable to open file";
+//TODO: Mela by se vycistit pamet od regexu
+	//regfree(&re_interest_item);
 
 	printf("[ CSFD ] parse done (%d)\n", state);
 	return 0;
