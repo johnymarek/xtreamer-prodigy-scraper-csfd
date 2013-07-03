@@ -3,17 +3,8 @@
  *
  *  Created by longmatys <longmatys@gmail.com>
  *  Useful for retrieving movie data from czech database
+ *  Cleanup(?)/Rewrite(?)/Zapleveleni(?) kmarty <gkmarty@gmail.com> (proste jsem se v tom vrtal :-) )
  */
-
- /* max error message length */
-#define MAX_ERR_LENGTH 80
- /* max length of a line of text from stdin */
-#define MAX_TXT_LENGTH 100000
-#define STATE_UNKNOWN 0
-#define STATE_MULTIPLE_START 1
-#define STATE_SINGLE_TYPE 2
-#define STATE_MULTIPLE_TYPE 3
-#define STATE_FINDING_NAME 5
 
 #include <unistd.h>
 #include <stdio.h>
@@ -26,348 +17,348 @@
 #include <sys/types.h>
  /* for index(): */
 #include <regex.h>
-#include <string.h>
 #include <string>
+#include <vector>
 using namespace std;
-void RemoveString(string &param, const string start, const string end=""){
+
+ /* max error message length */
+#define MAX_ERR_LENGTH 80
+ /* max length of a line of text from stdin */
+#define MAX_TXT_LENGTH 100000
+
+/* Stavy pri hledani */
+#define S_UNKNOWN	0
+#define S_LOOK4IDNAME	1
+#define S_LOOK4YEAR	2
+
+/* Stavy pri ziskavani infa o filmu */
+/* U dat, ktera jdou ziskat rovnou z jednoho radku, a ten radek se da najit pomerne slusne, tam je pouzit pouze I_LOOK4*
+ * U viceradkovych/vicezaznamovych dat, je I_LOOK4* pouzit pro preskoceni balastu az na misto kde zacinaji data
+ * a I_GETTING* je pro ziskavani radek kde se potrebna data nachazeji
+ */
+#define I_UNKNOWN		0
+#define I_LOOK4NAME		1
+#define I_GETTING_NAME		2
+#define I_LOOK4GENRE		3
+#define I_LOOK4YEAR		4
+#define I_LOOK4DIRECTOR		5
+#define I_GETTING_DIRECTOR	6
+#define I_LOOK4ACTORS		7
+#define I_GETTING_ACTORS	8
+#define I_LOOK4COVERS		9
+#define I_GETTING_COVERS	10
+#define I_LOOK4OVERVIEW		11
+#define I_GETTING_OVERVIEW	12
+#define I_LOOK4FANART		13
+#define I_GETTING_FANART	14
+#define I_LOOK4RATE		15
+
+#define I_HOTOVO		255
+
+string RemoveString(const string s, const string start, const string end="") {
+	// Oproti puvodni fci v csfd.cpp tahle nemeni vstupni retezec, ale vraci novy
+	string result = s;
 	int pos_b,pos_e;
-	while ((pos_b=param.find(start))>-1){
+
+	while ((pos_b=result.find(start))>-1){
 		if (end.length()>0){
-			if ((pos_e=param.find(end))>-1){
-				param.erase(pos_b,pos_e-pos_b+end.length());
+			if ((pos_e=result.find(end))>-1){
+				result.erase(pos_b,pos_e-pos_b+end.length());
 			}	
 		}else
-			param.erase(pos_b,start.length());
+			result.erase(pos_b,start.length());
 	}
+	return result;
 }
-#define interest_name "<h1>(.*)" 
-#define interest_name_help "([a-zA-Z0-9].*)" 
-#define interest_id "<a href=\"/film/([^/]*)/zajimavosti/"
-#define interest_year "<p class=\"origin\">[^,]*, ([^,]*),"
+
+// Tohle je obslehnuty z http://www.cplusplus.com/faq/sequences/strings/split/#string-find_first_of
+// Jen je to prebouchany na fci (aby to ten vector vracelo jako navratovou hodnotu)
+struct split {
+	enum empties_t { empties_ok, no_empties };
+};
+
+vector <string> split(const string s, const string delimiters, split::empties_t empties = split::empties_ok )
+{
+	vector <string> result;
+	size_t current;
+	size_t next = -1;
+	do {
+		if (empties == split::no_empties) {
+			next = s.find_first_not_of(delimiters, next + 1);
+			if (next == string::npos) break;
+			next -= 1;
+		}
+		current = next + 1;
+		next = s.find_first_of( delimiters, current );
+		result.push_back(s.substr(current, next - current ));
+	} while (next != string::npos);
+	return result;
+}
+
+// *_begin a *_end jsou pouzity pro find(), nikoliv pro regexp. Pro regexp jsou *_strip
+#define i_results_begin "<div class=\"page-content\" id=\"pg-web-film\">"
+// #define i_results_end "<div class=\"navigation\">"  // Tak, kvuli procentuelnimu hodnoceni to musim dojet az do konce
+#define i_name_begin "<h1>"
+#define i_name_end "</h1>"
+#define i_name_strip "<h1>[[:space:]]*([^[:space:]].*[^[:space:]])[[:space:]]*</h1>"
+#define i_genre "<p class=\"genre\">(.*)</p>"
+#define i_year "<p class=\"origin\">[^,]*, ([0-9]{4}),"
+#define i_director_begin "<h4>Režie:</h4>"
+#define i_director_end "</span>"
+#define i_director_strip "<a href=\".*\">(.*)</a>"
+#define i_actors_begin "<h4>Hrají:</h4>"
+#define i_actors_end "</span>"
+#define i_actors_strip "<a href=\".*\">(.*)</a>"
+#define i_covers_begin "<h3>Plakáty</h3>"
+#define i_covers_end "</tr>"
+#define i_covers_strip "url\\('(.*)\\?h180'\\)"
+#define i_overview_begin "<h3>Obsah </h3>"
+#define i_overview_end "</li>"
+#define i_overview_strip "alt=\"Odrážka\"[[:space:]]*class=\"dot( hidden)?\"/>[[:space:]]*(.*)<span class=\"source\">(.*)</span>"
+#define i_fanart_begin "Galerie\t<span class=\"count\">"
+#define i_fanart_end "<div class=\"footer\"></div>"
+#define i_fanart_strip "<div class=\"photo\" style=\".*background-image: url\\('(.*)\\?w700'\\);"
+#define i_rate "<h2 class=\"average\">([0-9]+)%</h2>"
 int ParseInfo(const char * html, struct InfoResult * p)
 {
-	bool ret;
-	int err;
-	const char * str_notfound = "Not Found";
-	const char * str;
-	char temp_string[1024];
-	string line,multiline,found;
+	string line, temp_string;
 	ifstream myfile(html);
-	int state=0;
-	int n=0;
-	int pos=0;
+	vector <string> fields;
+	int state = I_UNKNOWN;
+	int i;
 	int cover_i=0;
-	regmatch_t pmatch[3];
-//Regular expressions
-	//char interest_name[]="<h1>(.*)";
-	char interest_overview_help1[]="<h3>Obsah </h3>";
-	char interest_overview_help2[]="</li>";
-	char interest_overview[]="<p>.* (.+)</p>";
-	char interest_rate[]="<h2 class=\"average\">([^%]*)%?</h2>";
-	char interest_votes[]="<a id=\"rating-count-link\" rel=\"nofollow\" href=\".*\">všechna hodnocení<br /> \\((.*)\\)</a>";
-	char interest_actor_help1[]="<h4>Hrají:</h4>";
-	char interest_actor_help2[]="</span>";
-	char interest_genres[]="<p class=\"genre\">(.*)</p>";
-	char interest_cover[]="url\\('(.*)'\\)";
-	char interest_cover_help1[]="<h3>Plakáty</h3>";
-	char interest_cover_help2[]="</tr>";
-	//char interest_year[]="<p class=\"origin\">[^,]*, ([^,]*),";
-	char interest_director_help1[]="<h4>Režie:</h4>";
-	char interest_director_help2[]="</span>";
-	regex_t re_name;
-	regex_t re_name_help;
-	regex_t re_overview_help1;
-	regex_t re_overview_help2;
-	regex_t re_overview;
-	regex_t re_rate;
-	regex_t re_votes;
-	regex_t re_genres;
-	regex_t re_actor_help1;
-	regex_t re_actor_help2;
-	regex_t re_cover;
-	regex_t re_cover_help1;
-	regex_t re_cover_help2;
-	regex_t re_director_help1;
-	regex_t re_director_help2;
+	int fanart_i=0;
+
+	regmatch_t pmatch[4];
+
+	regex_t re_name_strip;
+	regex_t re_genre;
 	regex_t re_year;
-//Regular expression compilation
-	if ( (err = regcomp(&re_overview_help1, interest_overview_help1, REG_EXTENDED)) != 0 ) {
-		/* Only First time error handling - to save my time :)
-regerror(err, &re_header, err_msg, MAX_ERR_LENGTH);
-printf("Error analyzing regular expression '%s': %s.\n", interest_header, err_msg);
-*/
-		return -1;
-	}
-	if ( (err = regcomp(&re_overview_help2, interest_overview_help2, REG_EXTENDED)) != 0 ) return -1;
-	if ( (err = regcomp(&re_name, interest_name, REG_EXTENDED)) != 0 ) return -1; 
-	if ( (err = regcomp(&re_name_help, interest_name_help, REG_EXTENDED)) != 0 ) return -1; 
-	if ( (err = regcomp(&re_overview, interest_overview, REG_EXTENDED)) != 0 ) return -1; 
-	if ( (err = regcomp(&re_rate, interest_rate, REG_EXTENDED)) != 0 ) return -1; 
-	if ( (err = regcomp(&re_votes, interest_votes, REG_EXTENDED)) != 0 ) return -1; 
-	if ( (err = regcomp(&re_genres, interest_genres, REG_EXTENDED)) != 0 ) return -1; 
-	if ( (err = regcomp(&re_actor_help1, interest_actor_help1, REG_EXTENDED)) != 0 ) return -1; 
-	if ( (err = regcomp(&re_actor_help2, interest_actor_help2, REG_EXTENDED)) != 0 ) return -1; 
-	if ( (err = regcomp(&re_cover, interest_cover, REG_EXTENDED)) != 0 ) return -1; 
-	if ( (err = regcomp(&re_cover_help1, interest_cover_help1, REG_EXTENDED)) != 0 ) return -1; 
-	if ( (err = regcomp(&re_cover_help2, interest_cover_help2, REG_EXTENDED)) != 0 ) return -1; 
-	if ( (err = regcomp(&re_year, interest_year, REG_EXTENDED)) != 0 ) return -1; 
-	if ( (err = regcomp(&re_director_help1, interest_director_help1, REG_EXTENDED)) != 0 ) return -1; 
-	if ( (err = regcomp(&re_director_help2, interest_director_help2, REG_EXTENDED)) != 0 ) return -1; 
-	if (myfile.is_open())
-	{
-		while ( myfile.good() )
-		{
-			getline (myfile,line);
-//printf("DEBUG:Prochazim (stav:%d),%s\n",state,line.c_str());
-			if (state==0){
-				//Finding movie name
-				if ( (err = regexec(&re_name, line.c_str(), 2, pmatch, 0)) == 0 ){
-					/* Only First time error handling - to save my time :)
-					   regerror(err, &myre1, err_msg, MAX_ERR_LENGTH);
-					 */
-					state=STATE_FINDING_NAME;
-//printf("DEBUG:Snazim se najit nazev %d\n", state);
-					//found=line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str();
-					//remove UTF 8 spaces
-					//RemoveString(found,"\x9");
-					//RemoveString(found,"<",">");
-					//p->name = strdup(found.c_str());
-				}else if ( err != REG_NOMATCH ) return -1; 
-				//Finding section with movies
-				if ( (err = regexec(&re_overview_help1, line.c_str(), 0, NULL, 0)) == 0 ) state=1;
-				else if ( err != REG_NOMATCH ) return -1; 
-				//Finding actors beginning
-				if ( (err = regexec(&re_actor_help1, line.c_str(), 0, NULL, 0)) == 0 ) state=2;
-				else if ( err != REG_NOMATCH ) return -1; 
-				//Finding cover art beginning
-				if ( (err = regexec(&re_cover_help1, line.c_str(), 0, NULL, 0)) == 0 ) state=3;
-				else if ( err != REG_NOMATCH ) return -1; 
-				//Finding director beginning
-				if ( (err = regexec(&re_director_help1, line.c_str(), 0, NULL, 0)) == 0 ) state=4;
-				else if ( err != REG_NOMATCH ) return -1; 
-				//Finding movie rate
-				if ( (err = regexec(&re_rate, line.c_str(), 2, pmatch, 0)) == 0 ){
-					p->rate = atoi(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
-				}else if ( err != REG_NOMATCH ) return -1; 
-				//Finding movie votes
-				if ( (err = regexec(&re_votes, line.c_str(), 2, pmatch, 0)) == 0 ){
-					found=line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str();
-					//remove UTF 8 spaces
-					RemoveString(found,"\xc2\xa0");
-					p->votes = atoi(found.c_str());
-				}else if ( err != REG_NOMATCH ) return -1; 
-				//Finding movie year
-				if ( (err = regexec(&re_year, line.c_str(), 2, pmatch, 0)) == 0 ){
-					p->year = atoi(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
-				}else if ( err != REG_NOMATCH ) return -1; 
-				//Finding movie genres
-				if ( (err = regexec(&re_genres, line.c_str(), 2, pmatch, 0)) == 0 ){
-					found=line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str();
-					RemoveString(found," ");
-					int i=0;
-					while ((i < JB_SCPR_MAX_GENRE )and ((pos=found.find("/"))>-1)){
-						p->genres[i++] = strdup(found.substr(0,pos).c_str());
-						found.replace(0,pos+1,"");
+	regex_t re_director_strip;
+	regex_t re_actors_strip;
+	regex_t re_covers_strip;
+	regex_t re_overview_strip;
+	regex_t re_fanart_strip;
+	regex_t re_rate;
+
+	if (regcomp(&re_name_strip, i_name_strip, REG_EXTENDED)) { return -1; }
+	if (regcomp(&re_genre, i_genre, REG_EXTENDED)) { return -1; }
+	if (regcomp(&re_year, i_year, REG_EXTENDED)) { return -1; }
+	if (regcomp(&re_director_strip, i_director_strip, REG_EXTENDED)) { return -1; }
+	if (regcomp(&re_actors_strip, i_actors_strip, REG_EXTENDED)) { return -1; }
+	if (regcomp(&re_covers_strip, i_covers_strip, REG_EXTENDED)) { return -1; }
+	if (regcomp(&re_overview_strip, i_overview_strip, REG_EXTENDED)) { return -1; }
+	if (regcomp(&re_fanart_strip, i_fanart_strip, REG_EXTENDED)) { return -1; }
+	if (regcomp(&re_rate, i_rate, REG_EXTENDED)) { return -1; }
+
+	if (myfile.is_open()) {
+
+		while (myfile.good()) {
+			getline(myfile,line);
+
+			switch (state) {
+				case I_LOOK4NAME:
+					if (line.find(i_name_begin) != string::npos) {
+						temp_string = line;
+						state = I_GETTING_NAME;
 					}
-					if ((i < JB_SCPR_MAX_GENRE )and (found.length()>0)) p->genres[i++] = strdup(found.c_str());
-				}else if ( err != REG_NOMATCH ) return -1; 
-			}else if (state==1){
-				//Finding movie overview end
-				if ( (err = regexec(&re_overview_help2, line.c_str(), 0, NULL, 0)) == 0 ) {
-					RemoveString(multiline,"\r");
-					RemoveString(multiline,"<",">");
-					RemoveString(multiline,"\t");
-					p->overview = strdup(multiline.c_str());
-					p->summary = strdup(multiline.c_str());
-					state=0;
-					multiline="";
-				}
-				else if ( err != REG_NOMATCH ) return -1; 
-				else  multiline+=line;
-			}else if (state==2){
-				//Finding movie actors end
-				if ( (err = regexec(&re_actor_help2, line.c_str(), 0, NULL, 0)) == 0 ) {
-					RemoveString(multiline,"<",">");
-					RemoveString(multiline,"\t");
-					RemoveString(multiline,"\r");
-					int i=0;
-					while ((i < JB_SCPR_MAX_ACTOR )and ((pos=multiline.find(", "))>-1)){
-						p->name_actor[i++] = strdup(multiline.substr(0,pos).c_str());
-						multiline.replace(0,pos+2,"");
+					break;
+				case I_GETTING_NAME:
+					temp_string.append(line);
+					if (line.find(i_name_end) != string::npos) {
+						if (regexec(&re_name_strip, temp_string.c_str(), 2, pmatch, 0) == 0)
+							p->name = strdup(temp_string.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
+						state = I_LOOK4GENRE;
 					}
-					if ((i < JB_SCPR_MAX_ACTOR )and (multiline.length()>0)) p->name_actor[i++] = strdup(multiline.c_str());
-					state=0;
-					multiline="";
-				}
-				else if ( err != REG_NOMATCH ) return -1; 
-				else  multiline+=line;
-			}else if (state==3){
-				//Finding covers section end
-				if ( (err = regexec(&re_cover_help2, line.c_str(), 0, NULL, 0)) == 0 ) 
-					state=0;
-				else if ( err != REG_NOMATCH ) return -1; 
-				else {
-					if ( (err = regexec(&re_cover, line.c_str(), 2, pmatch, 0)) == 0 ){ 
-						found=line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str();
-						RemoveString(found,"\\");
-						if (found.find("http", 0, 4) != 0) {
-							// Doplneni chybejiciho "http:" pokud chybi
-							found.insert(0,"http:");
+					break;
+				case I_LOOK4GENRE:
+					if (regexec(&re_genre, line.c_str(), 2, pmatch, 0) == 0) {
+						fields = split(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so), " /", split::no_empties);
+						for (i = 0; i < (fields.size() < JB_SCPR_MAX_GENRE ? fields.size() : JB_SCPR_MAX_GENRE); i++)
+							p->genres[i] = strdup(fields[i].c_str());
+						state = I_LOOK4YEAR;
+					}
+					break;
+				case I_LOOK4YEAR:
+					if (regexec(&re_year, line.c_str(), 2, pmatch, 0) == 0) {
+						p->year = atoi(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
+						state = I_LOOK4DIRECTOR;
+					}
+					break;
+				case I_LOOK4DIRECTOR:
+					if (line.find(i_director_begin) != string::npos) {
+						temp_string = line;
+						state = I_GETTING_DIRECTOR;
+					}
+					break;
+				case I_GETTING_DIRECTOR:
+					temp_string.append(line);
+					if (line.find(i_director_end) != string::npos) {
+						if (regexec(&re_director_strip, temp_string.c_str(), 2, pmatch, 0) == 0)
+							p->director=strdup(temp_string.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
+						state = I_LOOK4ACTORS;
+					}
+					break;
+				case I_LOOK4ACTORS:
+					if (line.find(i_actors_begin) != string::npos) {
+						temp_string.clear();
+						state = I_GETTING_ACTORS;
+					}
+					break;
+				case I_GETTING_ACTORS:
+					if (line.find(i_actors_end) != string::npos) {
+						fields = split(temp_string, ",", split::no_empties);
+						for (i = 0; i < (fields.size() < JB_SCPR_MAX_ACTOR ? fields.size() : JB_SCPR_MAX_ACTOR); i++) {
+							if (regexec(&re_actors_strip, fields[i].c_str(), 2, pmatch, 0) == 0)
+								p->name_actor[i] = strdup(fields[i].substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
 						}
-						if ((cover_i < JB_SCPR_MAX_IMAGE )and (found.length()>0)){
-							if (pos = found.find_last_of("?")) {
-								// Plny obrazek je bez cehosi a la "?h180" na konci url. Aspon by mel byt.
-								found.erase(pos,found.length());
+						state = I_LOOK4COVERS;
+					} else {
+						temp_string.append(line);
+					}
+					break;
+				case I_LOOK4COVERS:
+					if (line.find(i_covers_begin) != string::npos)
+						state = I_GETTING_COVERS;
+					break;
+				case I_GETTING_COVERS:
+					if (line.find(i_covers_end) != string::npos) {
+						state = I_LOOK4OVERVIEW;
+					} else {
+						if (regexec(&re_covers_strip, line.c_str(), 2, pmatch, 0) == 0) {
+							temp_string = RemoveString(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so), "\\");
+							if (temp_string.find("http", 0, 4) != 0)
+								temp_string.insert(0,"http:");
+							if (cover_i < JB_SCPR_MAX_IMAGE) {
+								p->cover_preview[cover_i] = strdup(temp_string.c_str());
+								p->cover[cover_i++] = strdup(temp_string.c_str());
 							}
-							p->cover_preview[cover_i] = strdup(found.c_str());
-							p->cover[cover_i++] = strdup(found.c_str());
 						}
-					} else if ( err != REG_NOMATCH ) return -1; 
-				}
-			}else if (state==4){
-				//Finding movie actors end
-				if ( (err = regexec(&re_director_help2, line.c_str(), 0, NULL, 0)) == 0 ) {
-					RemoveString(multiline,"<",">");
-					RemoveString(multiline,"\t");
-					RemoveString(multiline,"\r");
-					p->director=strdup(multiline.c_str());
-
-					state=0;
-					multiline="";
-				}
-				else if ( err != REG_NOMATCH ) return -1; 
-				else  multiline+=line;
-			}else if (state==STATE_FINDING_NAME){
-//printf("DEBUG:Snazim se najit nazev 2\n");
-
-				if ( (err = regexec(&re_name_help, line.c_str(), 2, pmatch, 0)) == 0 ){
-//printf("DEBUG:Asi mam nazev %s\n",line.c_str());
-					state=STATE_UNKNOWN;
-					found=line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str();
-					//remove UTF 8 spaces
-					RemoveString(found,"\x9");
-					RemoveString(found,"<",">");
-					p->name = strdup(found.c_str());
-				}
+					}
+					break;
+				case I_LOOK4OVERVIEW:
+					if (line.find(i_overview_begin) != string::npos) {
+						temp_string.clear();
+						state = I_GETTING_OVERVIEW;
+					}
+					break;
+				case I_GETTING_OVERVIEW:
+					temp_string.append(line);
+					if (line.find(i_overview_end) != string::npos) {
+						if (regexec(&re_overview_strip, temp_string.c_str(), 4, pmatch, 0) == 0) {
+							string s = temp_string.substr(pmatch[2].rm_so,pmatch[2].rm_eo-pmatch[2].rm_so);
+							s.append(temp_string.substr(pmatch[3].rm_so,pmatch[3].rm_eo-pmatch[3].rm_so));
+							s = RemoveString(s, "\r"); // Normalne, fakt se ^M v 'overview' objevil :-O
+							s = RemoveString(s, "\t"); // Tohle je pro sichr, kdyz tam muze bejt ten '\r' tak se uz ani nedivim
+							p->overview = strdup(s.c_str());
+							p->summary = strdup(s.c_str());
+						}
+						state = I_LOOK4FANART;
+					}
+					break;
+				case I_LOOK4FANART:
+					if (line.find(i_fanart_begin) != string::npos)
+						state = I_GETTING_FANART;
+					break;
+				case I_GETTING_FANART:
+					if (line.find(i_fanart_end) != string::npos) {
+						state = I_LOOK4RATE;
+					} else {
+						if (regexec(&re_fanart_strip, line.c_str(), 2, pmatch, 0) == 0) {
+							// Jeste tam backslashe nejsou, ale daji se do budoucna cekat
+							temp_string = RemoveString(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so), "\\");
+							if (temp_string.find("http", 0, 4) != 0)
+								temp_string.insert(0,"http:");
+							p->fanart_preview[fanart_i] = strdup(temp_string.c_str());
+							p->fanart[fanart_i++] = strdup(temp_string.c_str());
+						}
+					}
+					break;
+				case I_LOOK4RATE:
+					if (regexec(&re_rate, line.c_str(), 2, pmatch, 0) == 0) {
+						p->rate = atoi(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
+						state = I_HOTOVO;
+					}
+					break;
+				default: // Vcetne I_UNKNOWN
+					if (line.find(i_results_begin) != string::npos)
+						state = I_LOOK4NAME;
 			}
 
-
+			if (state == I_HOTOVO)
+				break; // Dal uz neni nic zajimaveho
 		}
+
 		myfile.close();
 	}
-	else cout << "Unable to open file"; 
-	regfree(&re_name);
-	regfree(&re_name_help);
-	regfree(&re_overview_help1);
-	regfree(&re_overview_help2);
-	regfree(&re_overview);
-	regfree(&re_rate);
-	regfree(&re_votes);
-	regfree(&re_genres);
-	regfree(&re_actor_help1);
-	regfree(&re_actor_help2);
-	regfree(&re_cover);
-	regfree(&re_cover_help1);
-	regfree(&re_cover_help2);
-	regfree(&re_year);
-	regfree(&re_director_help1);
-	regfree(&re_director_help2);
+
+	else cout << "Unable to open file";
+
 	printf("[ CSFD ] parse done\n");
 	return 0;
 }
+
+#define s_results_begin "<h2 class=\"header\">Filmy</h2>"
+#define s_results_ends "</ul>"
+// #define interest_item "<h3 class=\"subject\"><a href=\"/film/(.*)/\" .*c1\">(.*)</a>"; // class="film c1" = presna shoda nazvu? Protoze class="film c2" obsahuje jen podobny nazev
+#define interest_item "<h3 class=\"subject\"><a href=\"/film/(.*)/\" .*\">(.*)</a>"
+#define interest_year "<p>.* ([0-9]{4})</p>"
 int ParseSearch(const char * html, struct SearchResult * p)
 {
-	bool ret;
-	string line,found;
+	string line;
 	ifstream myfile(html);
-	regex_t re_multiple_header,re_multiple_item,interest_single_year,re_multiple_end;
-	regex_t re_single_id;
-	regex_t re_single_name;
-	regex_t re_single_year;
-	regex_t re_multiple_type;
-	int err;
-	char err_msg[MAX_ERR_LENGTH];
-	char interest_header[]="<h2 class=\"header\">Filmy</h2>";
-	char interest_item[]="<h3 class=\"subject\"><a href=\"/film/(.*)/\" .*>(.*)</a>";
-	char interest_year_s[]="<p>.* (.+)</p>";
-	char interest_footer[]="</ul>";
-	char movie_item[]="<li>";
-	char interest_multiple_results[]="<h1>Vyhledávání</h1>";
-	int state=STATE_UNKNOWN;
-	int n=0;
-	regmatch_t pmatch[3];
-	if ( (err = regcomp(&re_multiple_header, interest_header, REG_EXTENDED)) != 0 ) { return -1; }
-	if ( (err = regcomp(&re_multiple_item, interest_item, REG_EXTENDED)) != 0 ) { return -1; }
-	if ( (err = regcomp(&interest_single_year, interest_year_s, REG_EXTENDED)) != 0 ) { return -1; } 
-	if ( (err = regcomp(&re_multiple_end, interest_footer, REG_EXTENDED)) != 0 ) { return -1; }
-	if ( (err = regcomp(&re_single_id, interest_id, REG_EXTENDED)) != 0 ) return -1;
-	if ( (err = regcomp(&re_single_name, interest_name, REG_EXTENDED)) != 0 ) return -1; 
-	if ( (err = regcomp(&re_single_year, interest_year, REG_EXTENDED)) != 0 ) return -1; 
-	if ( (err = regcomp(&re_multiple_type, interest_multiple_results, REG_EXTENDED)) != 0 ) return -1; 
-	if (myfile.is_open())
-	{
-		while ( myfile.good() )
-		{
+	int state = S_UNKNOWN;
+	int nResults = 0;
+
+	regmatch_t pmatch[4]; // Melo by to by o polozku vic, aby se dalo najit -1 v .rm_so za poslednim matchem
+
+	regex_t re_interest_item;
+	regex_t re_interest_year;
+
+	if (regcomp(&re_interest_item, interest_item, REG_EXTENDED)) { return -1; }
+	if (regcomp(&re_interest_year, interest_year, REG_EXTENDED)) { return -1; }
+
+	if (myfile.is_open()) {
+		while (myfile.good()) {
 			getline (myfile,line);
-			if (state==STATE_UNKNOWN){
-//Determining search result type - single or multiple, determined by h1 header
-				if ( (err = regexec(&re_multiple_type, line.c_str(), 0, NULL, 0)) == 0 ) { 
-					state=STATE_MULTIPLE_TYPE; 
-				} else if ( err != REG_NOMATCH ) { return -1; }
-				else if ( (err = regexec(&re_single_name, line.c_str(), 2, pmatch, 0)) == 0 ) { 
-					found=line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str();
-					//remove UTF 8 spaces
-					RemoveString(found,"\x9");
-					p->results[n].name = strdup(found.c_str());
-					state=STATE_SINGLE_TYPE; 
-				}else if ( err != REG_NOMATCH ) { return -1; }
-			}else if (state==STATE_MULTIPLE_TYPE){
-				if ( (err = regexec(&re_multiple_header, line.c_str(), 0, NULL, 0)) == 0 ) { 
-					state=STATE_MULTIPLE_START; 
-				} else if ( err != REG_NOMATCH ) { return -1; }
-			}else if (state==STATE_MULTIPLE_START){
-				//Finding section with movies
-				if ( (err = regexec(&re_multiple_item, line.c_str(), 3, pmatch, 0)) == 0 ) {
-					if (n < MAX_SEARCH_RESULT) {
-						p->results[n].id = strdup(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
-						p->results[n].name = strdup(line.substr(pmatch[2].rm_so,pmatch[2].rm_eo-pmatch[2].rm_so).c_str());
+
+			switch (state) {
+				case S_LOOK4IDNAME:
+					if (regexec(&re_interest_item, line.c_str(), 4, pmatch, 0) == 0) {
+						// Nalezeno 'id' a 'name' filmu
+						p->results[nResults].id = strdup(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
+						p->results[nResults].name = strdup(line.substr(pmatch[2].rm_so,pmatch[2].rm_eo-pmatch[2].rm_so).c_str());
+						state = S_LOOK4YEAR; // Dal by mel nasledovat rok filmu
 					}
-				} else if ( err != REG_NOMATCH ) { return -1; }
-				else if ( (err = regexec(&interest_single_year, line.c_str(), 2, pmatch, 0)) == 0 ) {
-					if (n < MAX_SEARCH_RESULT) {
-						p->results[n].year = atoi(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
-						//Year is always last interesting
-						n++;
+					break;
+				case S_LOOK4YEAR:
+					if (regexec(&re_interest_year, line.c_str(), 3, pmatch, 0) == 0) {
+						// Nalezen rok filmu
+						p->results[nResults++].year = atoi(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
+						state = S_LOOK4IDNAME; // Dal uz neni nic, jen nazev a id dalsiho filmu
 					}
-				} else if ( err != REG_NOMATCH ) { return -1; }
-				else if ( (err = regexec(&re_multiple_end, line.c_str(), 0, NULL, 0)) == 0 ) {
-					state=STATE_UNKNOWN;
-				}
-				else if ( err != REG_NOMATCH ) { return -1; }
-			}else if (state==STATE_SINGLE_TYPE){
-				if ( (err = regexec(&re_single_year, line.c_str(), 2, pmatch, 0)) == 0 ) { 
-					p->results[n].year = atoi(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
-				} else if ( err != REG_NOMATCH ) { return -1; }
-				if ( (err = regexec(&re_single_id, line.c_str(), 2, pmatch, 0)) == 0 ) { 
-					p->results[n].id = strdup(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
-					n++;
-				} else if ( err != REG_NOMATCH ) { return -1; }
+					break;
+				default: // Vcetne S_UNKNOWN
+					if (line.find(s_results_begin) != string::npos) {
+						// Az do ted to bylo nezajimavy
+						state = S_LOOK4IDNAME;
+					}
 			}
 
+			if (state != S_UNKNOWN && line.find(s_results_ends) != string::npos) {
+				// Dal uz neni nic zajimaveho
+				break; // To je break toho while (myfile.good()) { ... }
+			}
 		}
 		myfile.close();
+	} else {
+		cout << "Unable to open file";
 	}
-	else cout << "Unable to open file"; 
-	regfree(&re_multiple_header);
-	regfree(&re_multiple_item);
-	regfree(&interest_single_year);
-	regfree(&re_multiple_end);
-	regfree(&re_single_id);
-	regfree(&re_single_year);
-	regfree(&re_single_name);
-	regfree(&re_multiple_type);
-	p->nResults=n;
-	return n;
+
+	regfree(&re_interest_item);
+	regfree(&re_interest_year);
+	p->nResults=nResults;
+	return nResults;
 }
 
 int main(int argc, char *argv[]) {
@@ -432,7 +423,7 @@ int main(int argc, char *argv[]) {
 	}
 	else {
 		/* get movie info, and will pass the id via keywoard */
-		sprintf(cmd, "wget -t 1 -T 30 -nd \"%s/film/%s/\" -O %s", LINK, keyword, TMPFILE);
+		sprintf(cmd, "wget -t 1 -T 30 -nd \"%s/film/%s/galerie/\" -O %s", LINK, keyword, TMPFILE);
 		printf("%s\n",cmd);
 		system(cmd);
 		if (access(TMPFILE, F_OK) == 0) {
