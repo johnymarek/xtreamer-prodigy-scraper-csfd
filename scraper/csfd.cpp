@@ -52,7 +52,8 @@ using namespace std;
 #define I_LOOK4FANART		13
 #define I_GETTING_FANART	14
 #define I_LOOK4RATE		15
-#define I_GETTING_COVER		16
+#define I_LOOK4COVER		16
+#define I_GETTING_COVER		17
 
 #define I_HOTOVO		255
 
@@ -110,9 +111,9 @@ vector <string> split(const string s, const string delimiters, split::empties_t 
 #define i_actors_begin "<h4>Hrají:</h4>"
 #define i_actors_end "</span>"
 #define i_actors_strip "<a href=\".*\">(.*)</a>"
-#define i_cover_begin "<h3>Plakáty</h3>"
-#define i_cover_end "</tr>"
-#define i_cover_strip "url\\('(.*)\\?h180'\\)"
+#define i_cover_begin "<div id=\"poster\" class=\"image\">"
+#define i_cover_end "</div>"
+#define i_cover_strip "<img src=\"(.*)\\?h180\""
 #define i_covers_begin "<h3>Plakáty</h3>"
 #define i_covers_end "</tr>"
 #define i_covers_strip "url\\('(.*)\\?h180'\\)"
@@ -140,6 +141,7 @@ int ParseInfo(const char * html, struct InfoResult * p)
 	regex_t re_year;
 	regex_t re_director_strip;
 	regex_t re_actors_strip;
+	regex_t re_cover_strip;
 	regex_t re_covers_strip;
 	regex_t re_overview_strip;
 	regex_t re_fanart_strip;
@@ -150,6 +152,7 @@ int ParseInfo(const char * html, struct InfoResult * p)
 	if (regcomp(&re_year, i_year, REG_EXTENDED)) { return -1; }
 	if (regcomp(&re_director_strip, i_director_strip, REG_EXTENDED)) { return -1; }
 	if (regcomp(&re_actors_strip, i_actors_strip, REG_EXTENDED)) { return -1; }
+	if (regcomp(&re_cover_strip, i_cover_strip, REG_EXTENDED)) { return -1; }
 	if (regcomp(&re_covers_strip, i_covers_strip, REG_EXTENDED)) { return -1; }
 	if (regcomp(&re_overview_strip, i_overview_strip, REG_EXTENDED)) { return -1; }
 	if (regcomp(&re_fanart_strip, i_fanart_strip, REG_EXTENDED)) { return -1; }
@@ -161,6 +164,26 @@ int ParseInfo(const char * html, struct InfoResult * p)
 			getline(myfile,line);
 
 			switch (state) {
+				case I_LOOK4COVER:
+//Jedna se o ten uvodni obrazek
+					if (line.find(i_cover_begin) != string::npos)
+						state = I_GETTING_COVER;
+					break;
+				case I_GETTING_COVER:
+					if (line.find(i_cover_end) != string::npos) {
+						state = I_LOOK4NAME;
+					} else {
+						if (regexec(&re_cover_strip, line.c_str(), 2, pmatch, 0) == 0) {
+							temp_string = RemoveString(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so), "\\");
+							if (temp_string.find("http", 0, 4) != 0)
+								temp_string.insert(0,"http:");
+							if (cover_i < JB_SCPR_MAX_IMAGE) {
+								p->cover_preview[cover_i] = strdup(temp_string.c_str());
+								p->cover[cover_i++] = strdup(temp_string.c_str());
+							}
+						}
+					}
+					break;
 				case I_LOOK4NAME:
 					if (line.find(i_name_begin) != string::npos) {
 						temp_string = line;
@@ -286,7 +309,7 @@ int ParseInfo(const char * html, struct InfoResult * p)
 					break;
 				default: // Vcetne I_UNKNOWN
 					if (line.find(i_results_begin) != string::npos)
-						state = I_LOOK4NAME;
+						state = I_LOOK4COVER;
 			}
 
 			if (state == I_HOTOVO)
