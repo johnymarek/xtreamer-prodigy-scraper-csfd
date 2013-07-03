@@ -131,7 +131,6 @@ int ParseInfo(const char * html, struct InfoResult * p)
 
 	regmatch_t pmatch[5];
 
-	regex_t re_cover_strip;
 	regex_t re_name_strip;
 	regex_t re_genre;
 	regex_t re_year;
@@ -142,7 +141,6 @@ int ParseInfo(const char * html, struct InfoResult * p)
 	regex_t re_fanart_strip;
 	regex_t re_rate;
 
-	if (regcomp(&re_cover_strip, i_cover_strip, REG_EXTENDED)) { return -1; }
 	if (regcomp(&re_name_strip, i_name_strip, REG_EXTENDED)) { return -1; }
 	if (regcomp(&re_genre, i_genre, REG_EXTENDED)) { return -1; }
 	if (regcomp(&re_year, i_year, REG_EXTENDED)) { return -1; }
@@ -306,9 +304,11 @@ int ParseInfo(const char * html, struct InfoResult * p)
 // #define interest_item "<h3 class=\"subject\"><a href=\"/film/(.*)/\" .*c1\">(.*)</a>"; // class="film c1" = presna shoda nazvu? Protoze class="film c2" obsahuje jen podobny nazev
 #define interest_item "<h3 class=\"subject\"><a href=\"/film/(.*)/\" .*\">(.*)</a>"
 #define interest_year "<p>.* ([0-9]{4})</p>"
+#define interest_single_item "<a href=\"/film/([0-9]+-)([^/]*)/zajimavosti/"
+#define interest_single_year "<p class=\"origin\">[^,]*, ([^,]*),"
 int ParseSearch(const char * html, struct SearchResult * p)
 {
-	string line;
+	string line,pomocna;
 	ifstream myfile(html);
 	int state = S_UNKNOWN;
 	int nResults = 0;
@@ -316,15 +316,18 @@ int ParseSearch(const char * html, struct SearchResult * p)
 	regmatch_t pmatch[4]; // Melo by to by o polozku vic, aby se dalo najit -1 v .rm_so za poslednim matchem
 
 	regex_t re_interest_item;
+	regex_t re_interest_single_item;
 	regex_t re_interest_year;
+	regex_t re_interest_single_year;
 
 	if (regcomp(&re_interest_item, interest_item, REG_EXTENDED)) { return -1; }
+	if (regcomp(&re_interest_single_item, interest_single_item, REG_EXTENDED)) { return -1; }
 	if (regcomp(&re_interest_year, interest_year, REG_EXTENDED)) { return -1; }
+	if (regcomp(&re_interest_single_year, interest_single_year, REG_EXTENDED)) { return -1; }
 
 	if (myfile.is_open()) {
 		while (myfile.good()) {
 			getline (myfile,line);
-
 			switch (state) {
 				case S_LOOK4IDNAME:
 					if (regexec(&re_interest_item, line.c_str(), 4, pmatch, 0) == 0) {
@@ -332,7 +335,7 @@ int ParseSearch(const char * html, struct SearchResult * p)
 						p->results[nResults].id = strdup(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
 						p->results[nResults].name = strdup(line.substr(pmatch[2].rm_so,pmatch[2].rm_eo-pmatch[2].rm_so).c_str());
 						state = S_LOOK4YEAR; // Dal by mel nasledovat rok filmu
-					}
+					} 
 					break;
 				case S_LOOK4YEAR:
 					if (regexec(&re_interest_year, line.c_str(), 3, pmatch, 0) == 0) {
@@ -345,7 +348,18 @@ int ParseSearch(const char * html, struct SearchResult * p)
 					if (line.find(s_results_begin) != string::npos) {
 						// Az do ted to bylo nezajimavy
 						state = S_LOOK4IDNAME;
+					}else if (regexec(&re_interest_single_item, line.c_str(), 4, pmatch, 0) == 0) {
+						// Nalezeno 'id' a 'name' filmu
+						p->results[nResults].name = strdup(line.substr(pmatch[2].rm_so,pmatch[2].rm_eo-pmatch[2].rm_so).c_str());
+						pomocna=line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so);
+						pomocna.append(line.substr(pmatch[2].rm_so,pmatch[2].rm_eo-pmatch[2].rm_so));
+						p->results[nResults++].id = strdup(pomocna.c_str());
+					}else if (regexec(&re_interest_single_year, line.c_str(), 3, pmatch, 0) == 0) {
+						// Nalezen rok filmu
+						p->results[nResults].year = atoi(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
 					}
+
+
 			}
 
 			if (state != S_UNKNOWN && line.find(s_results_ends) != string::npos) {
@@ -359,7 +373,9 @@ int ParseSearch(const char * html, struct SearchResult * p)
 	}
 
 	regfree(&re_interest_item);
+	regfree(&re_interest_single_item);
 	regfree(&re_interest_year);
+	regfree(&re_interest_single_year);
 	p->nResults=nResults;
 	return nResults;
 }
