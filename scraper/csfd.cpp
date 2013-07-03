@@ -52,6 +52,7 @@ using namespace std;
 #define I_LOOK4FANART		13
 #define I_GETTING_FANART	14
 #define I_LOOK4RATE		15
+#define I_GETTING_COVER		16
 
 #define I_HOTOVO		255
 
@@ -109,6 +110,9 @@ vector <string> split(const string s, const string delimiters, split::empties_t 
 #define i_actors_begin "<h4>Hrají:</h4>"
 #define i_actors_end "</span>"
 #define i_actors_strip "<a href=\".*\">(.*)</a>"
+#define i_cover_begin "<h3>Plakáty</h3>"
+#define i_cover_end "</tr>"
+#define i_cover_strip "url\\('(.*)\\?h180'\\)"
 #define i_covers_begin "<h3>Plakáty</h3>"
 #define i_covers_end "</tr>"
 #define i_covers_strip "url\\('(.*)\\?h180'\\)"
@@ -218,6 +222,12 @@ int ParseInfo(const char * html, struct InfoResult * p)
 					}
 					break;
 				case I_LOOK4COVERS:
+//Covers sekce vubec nemusi existovat!
+				case I_LOOK4OVERVIEW:
+					if (line.find(i_overview_begin) != string::npos) {
+						temp_string.clear();
+						state = I_GETTING_OVERVIEW;
+					}
 					if (line.find(i_covers_begin) != string::npos)
 						state = I_GETTING_COVERS;
 					break;
@@ -234,12 +244,6 @@ int ParseInfo(const char * html, struct InfoResult * p)
 								p->cover[cover_i++] = strdup(temp_string.c_str());
 							}
 						}
-					}
-					break;
-				case I_LOOK4OVERVIEW:
-					if (line.find(i_overview_begin) != string::npos) {
-						temp_string.clear();
-						state = I_GETTING_OVERVIEW;
 					}
 					break;
 				case I_GETTING_OVERVIEW:
