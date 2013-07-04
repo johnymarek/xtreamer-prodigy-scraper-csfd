@@ -185,7 +185,7 @@ int ParseInfo(const char * html, struct InfoResult * p)
 					temp_string.append(line);
 					if (line.find(i_name_end) != string::npos) {
 						if (regexec(&re_name_strip, temp_string.c_str(), 2, pmatch, 0) == 0)
-							p->name = strdup(temp_string.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
+							p->name = strdup(RemoveString(temp_string.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so), "<", ">").c_str());
 						state = I_LOOK4GENRE;
 					}
 					break;
