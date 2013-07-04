@@ -82,7 +82,7 @@ struct split {
 	enum empties_t { empties_ok, no_empties };
 };
 
-vector <string> split(const string s, const string delimiters, split::empties_t empties = split::empties_ok )
+const vector <string> split(const string s, const string delimiters, split::empties_t empties = split::empties_ok )
 {
 	vector <string> result;
 	size_t current;
@@ -99,6 +99,32 @@ vector <string> split(const string s, const string delimiters, split::empties_t 
 	} while (next != string::npos);
 	return result;
 }
+
+const size_t reg_match(regex_t &regexp, string source, size_t nmatch, vector <string> &result)
+{
+	// &regexp = hen ten onen regexp vyrobeny pres regcomp() TODO: Muze to bejt '&regexp'?
+	// source = string proti kterymu se bude regexp matchovat
+	// nmatch = kolik polozek ma byt vraceno (ja vim, trochu kostrbaty). Celkem jich je o jednu vic, nulta polozka je cely retezec, ktery se s regexpem matchuje
+	// &result = kam se polozky ulozej
+	regmatch_t pmatch[nmatch+2];	// Tohle nevim jestli se smi, vypada to dost drze
+	int i, i_max;
+
+	i_max = nmatch+1;
+	result.clear(); // Odstraneni pripadnyho bordelu
+	if (regexec(&regexp, source.c_str(), i_max, pmatch, 0) == 0) {
+		for (i=0 ; i < i_max ; i++) {
+			if (pmatch[i].rm_eo != -1) {
+				result.push_back(source.substr(pmatch[i].rm_so,pmatch[i].rm_eo-pmatch[i].rm_so));
+			} else {
+				// Nutne. Pokud je substring prazdny, tak se taky potrebuje prenest aby bylo zachovano poradi substringu. Viz 'i_overview_strip'
+				result.push_back("");
+			}
+		}
+		return nmatch;
+	} 
+	return 0;
+}
+
 
 // Jednoradkova hledani: jsou ve tvaru i_* (bez suffixu) a jsou pouzite pro regexp
 // Viceradkova hlednani: i_*_begin a i_*_end jsou pouzity pro find(), i_*_strip jsou pouzity regexp
@@ -129,13 +155,12 @@ int ParseInfo(const char * html, struct InfoResult * p)
 {
 	string line, temp_string;
 	ifstream myfile(html);
+	vector <string> reg_fields;
 	vector <string> fields;
 	int state = I_UNKNOWN;
 	int i;
 	int cover_i=0;
 	int fanart_i=0;
-
-	regmatch_t pmatch[5];
 
 	regex_t re_poster;
 	regex_t re_name_strip;
@@ -166,12 +191,11 @@ int ParseInfo(const char * html, struct InfoResult * p)
 
 			switch (state) {
 				case I_LOOK4POSTER:
-					if (regexec(&re_poster, line.c_str(), 2, pmatch, 0) == 0) {
-						temp_string = line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so);
-						if (temp_string.find("http", 0, 4) != 0)
-							temp_string.insert(0,"http:");
-						p->cover_preview[cover_i] = strdup(temp_string.c_str());
-						p->cover[cover_i++] = strdup(temp_string.c_str());
+					if (reg_match(re_poster, line, 1, reg_fields)) {
+						if (reg_fields[1].find("http", 0, 4) != 0)
+							reg_fields[1].insert(0,"http:");
+						p->cover_preview[cover_i] = strdup(reg_fields[1].c_str());
+						p->cover[cover_i++] = strdup(reg_fields[1].c_str());
 						state = I_LOOK4NAME;
 					}
 					break;
@@ -184,22 +208,22 @@ int ParseInfo(const char * html, struct InfoResult * p)
 				case I_GETTING_NAME:
 					temp_string.append(line);
 					if (line.find(i_name_end) != string::npos) {
-						if (regexec(&re_name_strip, temp_string.c_str(), 2, pmatch, 0) == 0)
-							p->name = strdup(RemoveString(temp_string.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so), "<", ">").c_str());
+						if (reg_match(re_name_strip, temp_string, 1, reg_fields))
+							p->name = strdup(RemoveString(reg_fields[1], "<", ">").c_str());
 						state = I_LOOK4GENRE;
 					}
 					break;
 				case I_LOOK4GENRE:
-					if (regexec(&re_genre, line.c_str(), 2, pmatch, 0) == 0) {
-						fields = split(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so), " /", split::no_empties);
+					if (reg_match(re_genre, line, 1, reg_fields)) {
+						fields = split(reg_fields[1], " /", split::no_empties);
 						for (i = 0; i < (fields.size() < JB_SCPR_MAX_GENRE ? fields.size() : JB_SCPR_MAX_GENRE); i++)
 							p->genres[i] = strdup(fields[i].c_str());
 						state = I_LOOK4YEAR;
 					}
 					break;
 				case I_LOOK4YEAR:
-					if (regexec(&re_year, line.c_str(), 2, pmatch, 0) == 0) {
-						p->year = atoi(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
+					if (reg_match(re_year, line, 1, reg_fields)) {
+						p->year = atoi(reg_fields[1].c_str());
 						state = I_LOOK4DIRECTOR;
 					}
 					break;
@@ -212,8 +236,8 @@ int ParseInfo(const char * html, struct InfoResult * p)
 				case I_GETTING_DIRECTOR:
 					temp_string.append(line);
 					if (line.find(i_director_end) != string::npos) {
-						if (regexec(&re_director_strip, temp_string.c_str(), 2, pmatch, 0) == 0)
-							p->director=strdup(temp_string.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
+						if (reg_match(re_director_strip, temp_string, 1, reg_fields))
+							p->director=strdup(reg_fields[1].c_str());
 						state = I_LOOK4ACTORS;
 					}
 					break;
@@ -227,8 +251,8 @@ int ParseInfo(const char * html, struct InfoResult * p)
 					if (line.find(i_actors_end) != string::npos) {
 						fields = split(temp_string, ",", split::no_empties);
 						for (i = 0; i < (fields.size() < JB_SCPR_MAX_ACTOR ? fields.size() : JB_SCPR_MAX_ACTOR); i++) {
-							if (regexec(&re_actors_strip, fields[i].c_str(), 2, pmatch, 0) == 0)
-								p->name_actor[i] = strdup(fields[i].substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
+							if (reg_match(re_actors_strip, fields[i], 1, reg_fields))
+								p->name_actor[i] = strdup(reg_fields[1].c_str());
 						}
 						state = I_LOOK4COVERS;
 					} else {
@@ -248,13 +272,13 @@ int ParseInfo(const char * html, struct InfoResult * p)
 					if (line.find(i_covers_end) != string::npos) {
 						state = I_LOOK4OVERVIEW;
 					} else {
-						if (regexec(&re_covers_strip, line.c_str(), 2, pmatch, 0) == 0) {
-							temp_string = RemoveString(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so), "\\");
-							if (temp_string.find("http", 0, 4) != 0)
-								temp_string.insert(0,"http:");
+						if (reg_match(re_covers_strip, line, 1, reg_fields)) {
+							reg_fields[1] = RemoveString(reg_fields[1], "\\");
+							if (reg_fields[1].find("http", 0, 4) != 0)
+								reg_fields[1].insert(0,"http:");
 							if (cover_i < JB_SCPR_MAX_IMAGE) {
-								p->cover_preview[cover_i] = strdup(temp_string.c_str());
-								p->cover[cover_i++] = strdup(temp_string.c_str());
+								p->cover_preview[cover_i] = strdup(reg_fields[1].c_str());
+								p->cover[cover_i++] = strdup(reg_fields[1].c_str());
 							}
 						}
 					}
@@ -268,14 +292,12 @@ int ParseInfo(const char * html, struct InfoResult * p)
 				case I_GETTING_OVERVIEW:
 					temp_string.append(line);
 					if (line.find(i_overview_end) != string::npos) {
-						if (regexec(&re_overview_strip, temp_string.c_str(), 5, pmatch, 0) == 0) {
-							string s = temp_string.substr(pmatch[2].rm_so,pmatch[2].rm_eo-pmatch[2].rm_so);
-							s.append(temp_string.substr(pmatch[4].rm_so,pmatch[4].rm_eo-pmatch[4].rm_so));
-							s = RemoveString(s, "\r"); // Normalne, fakt se ^M v 'overview' objevil :-O
-							s = RemoveString(s, "\t"); // Tohle je pro sichr, kdyz tam muze bejt ten '\r' tak se uz ani nedivim
-							s = RemoveString(s, "<", ">"); // Dobra, odstraneni vseruznejch HTML tagu co tam nemaj co delat
-							p->overview = strdup(s.c_str());
-							p->summary = strdup(s.c_str());
+						if (reg_match(re_overview_strip, temp_string, 4, reg_fields)) {
+							temp_string = RemoveString(reg_fields[2] + reg_fields[4], "\r"); // Normalne, fakt se ^M v 'overview' objevil :-O
+							temp_string = RemoveString(temp_string, "\t"); // Tohle je pro sichr, kdyz tam muze bejt ten '\r' tak se uz ani nedivim
+							temp_string = RemoveString(temp_string, "<", ">"); // Dobra, odstraneni vseruznejch HTML tagu co tam nemaj co delat
+							p->overview = strdup(temp_string.c_str());
+							p->summary = strdup(temp_string.c_str());
 						}
 						state = I_LOOK4FANART;
 					}
@@ -284,8 +306,8 @@ int ParseInfo(const char * html, struct InfoResult * p)
 					if (line.find(i_fanart_begin) != string::npos)
 						state = I_GETTING_FANART;
 					// Pozor, fanart se nemusi vubec vyskytovat. Koukam zaroven i na zacatek ratingu
-					if (regexec(&re_rate, line.c_str(), 2, pmatch, 0) == 0) {
-						p->rate = atoi(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
+					if (reg_match(re_rate, line, 1, reg_fields)) {
+						p->rate = atoi(reg_fields[1].c_str());
 						state = I_HOTOVO;
 					}
 					break;
@@ -293,19 +315,18 @@ int ParseInfo(const char * html, struct InfoResult * p)
 					if (line.find(i_fanart_end) != string::npos) {
 						state = I_LOOK4RATE;
 					} else {
-						if (regexec(&re_fanart_strip, line.c_str(), 2, pmatch, 0) == 0) {
-							// Jeste tam backslashe nejsou, ale daji se do budoucna cekat
-							temp_string = RemoveString(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so), "\\");
-							if (temp_string.find("http", 0, 4) != 0)
-								temp_string.insert(0,"http:");
-							p->fanart_preview[fanart_i] = strdup(temp_string.c_str());
-							p->fanart[fanart_i++] = strdup(temp_string.c_str());
+						if (reg_match(re_fanart_strip, line, 1, reg_fields)) {
+							reg_fields[1] = RemoveString(reg_fields[1], "\\");
+							if (reg_fields[1].find("http", 0, 4) != 0)
+								reg_fields[1].insert(0,"http:");
+							p->fanart_preview[fanart_i] = strdup(reg_fields[1].c_str());
+							p->fanart[fanart_i++] = strdup(reg_fields[1].c_str());
 						}
 					}
 					break;
 				case I_LOOK4RATE:
-					if (regexec(&re_rate, line.c_str(), 2, pmatch, 0) == 0) {
-						p->rate = atoi(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
+					if (reg_match(re_rate, line, 1, reg_fields)) {
+						p->rate = atoi(reg_fields[1].c_str());
 						state = I_HOTOVO;
 					}
 					break;
@@ -347,12 +368,11 @@ int ParseInfo(const char * html, struct InfoResult * p)
 #define interest_single_year "<p class=\"origin\">[^,]*, ([0-9]{4}),.*</p>"
 int ParseSearch(const char * html, struct SearchResult * p)
 {
-	string line,pomocna;
+	string line;
 	ifstream myfile(html);
+	vector <string> reg_fields;
 	int state = S_UNKNOWN;
 	int nResults = 0;
-
-	regmatch_t pmatch[4]; // Melo by to by o polozku vic, aby se dalo najit -1 v .rm_so za poslednim matchem
 
 	regex_t re_interest_item;
 	regex_t re_interest_single_item;
@@ -369,27 +389,24 @@ int ParseSearch(const char * html, struct SearchResult * p)
 			getline (myfile,line);
 			switch (state) {
 				case S_LOOK4IDNAME:
-					if (regexec(&re_interest_item, line.c_str(), 4, pmatch, 0) == 0) {
-						// Nalezeno 'id' a 'name' filmu
-						p->results[nResults].id = strdup(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
-						p->results[nResults].name = strdup(line.substr(pmatch[2].rm_so,pmatch[2].rm_eo-pmatch[2].rm_so).c_str());
+					if (reg_match(re_interest_item, line, 2, reg_fields)) {
+						p->results[nResults].id = strdup(reg_fields[1].c_str());
+						p->results[nResults].name = strdup(reg_fields[2].c_str());
 						state = S_LOOK4YEAR; // Dal by mel nasledovat rok filmu
-					} 
+					}
 					break;
 				case S_LOOK4YEAR:
-					if (regexec(&re_interest_year, line.c_str(), 3, pmatch, 0) == 0) {
+					if (reg_match(re_interest_year, line, 1, reg_fields)) {
 						// Nalezen rok filmu
-						p->results[nResults++].year = atoi(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
+						p->results[nResults++].year = atoi(reg_fields[1].c_str());
 						state = S_LOOK4IDNAME; // Dal uz neni nic, jen nazev a id dalsiho filmu
 					}
 					break;
 				case S_LOOK4SINGLE_IDNAME:
-					if (regexec(&re_interest_single_item, line.c_str(), 4, pmatch, 0) == 0) {
+					if (reg_match(re_interest_single_item, line, 2, reg_fields)) {
 						// Nalezeno 'id' a 'name' single filmu
-						p->results[nResults].name = strdup(line.substr(pmatch[2].rm_so,pmatch[2].rm_eo-pmatch[2].rm_so).c_str());
-						pomocna=line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so);
-						pomocna.append(line.substr(pmatch[2].rm_so,pmatch[2].rm_eo-pmatch[2].rm_so));
-						p->results[nResults++].id = strdup(pomocna.c_str());
+						p->results[nResults].name = strdup(reg_fields[2].c_str());
+						p->results[nResults++].id = strdup((reg_fields[1]+reg_fields[2]).c_str());
 						state = S_HOTOVO; // Dal uz neni treba nic hledat
 					}
 					break;
@@ -398,9 +415,9 @@ int ParseSearch(const char * html, struct SearchResult * p)
 					//       Pak by se dalo pouzit vyhledavani nazvu filmu stejne jako v ParseInfo() = mel by spravne diakritiku a tak.
 					if (line.find(s_results_begin) != string::npos) {
 						state = S_LOOK4IDNAME;
-					} else if (regexec(&re_interest_single_year, line.c_str(), 2, pmatch, 0) == 0) {
+					} else if (reg_match(re_interest_single_year, line, 1, reg_fields)) {
 						// Nalezen rok single filmu = technicky jde o S_LOOK4SINGLE_YEAR
-						p->results[nResults].year = atoi(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
+						p->results[nResults].year = atoi(reg_fields[1].c_str());
 						state = S_LOOK4SINGLE_IDNAME;
 					}
 			}
