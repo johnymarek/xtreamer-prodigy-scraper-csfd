@@ -414,22 +414,22 @@ int main(int argc, char *argv[]) {
 	int c;
 	int ret = -1;
 
-    while((c = getopt(argc, argv, "sl:k:o:")) != -1) {
-	    switch(c) {
-		    case 's':
-			    do_search = true;
-			    break;
-		    case 'l':
-			    strncpy(language, optarg, 32);
-			    break;
-		    case 'k':
-			    strncpy(keyword, optarg, 255);
-			    break;
-		    case 'o':
-			    strncpy(output, optarg, 256);
-			    break;
-	    }
-    }
+	while((c = getopt(argc, argv, "sl:k:o:")) != -1) {
+		switch(c) {
+			case 's':
+				do_search = true;
+				break;
+			case 'l':
+				strncpy(language, optarg, 32);
+				break;
+			case 'k':
+				strncpy(keyword, optarg, 255);
+				break;
+			case 'o':
+				strncpy(output, optarg, 256);
+				break;
+		}
+	}
 /*	FILE *file;
 	file=fopen("/tmp/csfd.params.log","a+");
 	for (int i=0; i<argc; i++) {
