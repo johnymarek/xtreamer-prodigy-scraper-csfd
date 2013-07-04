@@ -313,8 +313,17 @@ int ParseInfo(const char * html, struct InfoResult * p)
 	}
 
 	else cout << "Unable to open file";
-//TODO: Mela by se vycistit pamet od regexu
-	//regfree(&re_interest_item);
+
+	regfree(&re_poster);
+	regfree(&re_name_strip);
+	regfree(&re_genre);
+	regfree(&re_year);
+	regfree(&re_director_strip);
+	regfree(&re_actors_strip);
+	regfree(&re_covers_strip);
+	regfree(&re_overview_strip);
+	regfree(&re_fanart_strip);
+	regfree(&re_rate);
 
 	printf("[ CSFD ] parse done (%d)\n", state);
 	return 0;
