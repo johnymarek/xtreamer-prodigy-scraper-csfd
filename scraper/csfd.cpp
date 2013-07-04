@@ -96,9 +96,9 @@ vector <string> split(const string s, const string delimiters, split::empties_t 
 	return result;
 }
 
-// *_begin a *_end jsou pouzity pro find(), nikoliv pro regexp. Pro regexp jsou *_strip
+// Jednoradkova hledani: jsou ve tvaru i_* (bez suffixu) a jsou pouzite pro regexp
+// Viceradkova hlednani: i_*_begin a i_*_end jsou pouzity pro find(), i_*_strip jsou pouzity regexp
 #define i_results_begin "<div class=\"page-content\" id=\"pg-web-film\">"
-// #define i_results_end "<div class=\"navigation\">"  // Tak, kvuli procentuelnimu hodnoceni to musim dojet az do konce
 #define i_poster "<img src=\"(.*)\\?h180\" alt=\"poster\" class=\"film-poster\".*/>"
 #define i_name_begin "<h1>"
 #define i_name_end "</h1>"
