@@ -283,6 +283,11 @@ int ParseInfo(const char * html, struct InfoResult * p)
 				case I_LOOK4FANART:
 					if (line.find(i_fanart_begin) != string::npos)
 						state = I_GETTING_FANART;
+					// Pozor, fanart se nemusi vubec vyskytovat. Koukam zaroven i na zacatek ratingu
+					if (regexec(&re_rate, line.c_str(), 2, pmatch, 0) == 0) {
+						p->rate = atoi(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
+						state = I_HOTOVO;
+					}
 					break;
 				case I_GETTING_FANART:
 					if (line.find(i_fanart_end) != string::npos) {
