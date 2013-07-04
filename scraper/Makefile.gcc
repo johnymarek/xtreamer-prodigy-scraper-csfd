@@ -15,7 +15,7 @@ LIBNAME         = libresult.a
 
 WARNING = -Wall
 
-CFLAGS= $(INCLUDES) $(DEFINES) -DSYS_UNIX=1 $(MYDEFS) -g
+override CFLAGS += $(INCLUDES) $(DEFINES) -DSYS_UNIX=1 $(MYDEFS) -g
 
 
 SRCS		= result.cpp
