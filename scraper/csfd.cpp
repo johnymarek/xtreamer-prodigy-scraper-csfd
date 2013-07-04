@@ -27,9 +27,13 @@ using namespace std;
 #define MAX_TXT_LENGTH 100000
 
 /* Stavy pri hledani */
-#define S_UNKNOWN	0
-#define S_LOOK4IDNAME	1
-#define S_LOOK4YEAR	2
+#define S_UNKNOWN		0
+#define S_LOOK4IDNAME		1
+#define S_LOOK4YEAR		2
+#define S_LOOK4SINGLE_YEAR	3	// Jen pro poradek, technicky neni pouzito
+#define S_LOOK4SINGLE_IDNAME	4
+
+#define S_HOTOVO		255
 
 /* Stavy pri ziskavani infa o filmu */
 /* U dat, ktera jdou ziskat rovnou z jednoho radku, a ten radek se da najit pomerne slusne, tam je pouzit pouze I_LOOK4*
@@ -133,8 +137,8 @@ int ParseInfo(const char * html, struct InfoResult * p)
 
 	regmatch_t pmatch[5];
 
-	regex_t re_name_strip;
 	regex_t re_poster;
+	regex_t re_name_strip;
 	regex_t re_genre;
 	regex_t re_year;
 	regex_t re_director_strip;
@@ -335,7 +339,7 @@ int ParseInfo(const char * html, struct InfoResult * p)
 #define interest_item "<h3 class=\"subject\"><a href=\"/film/(.*)/\" .*\">(.*)</a>"
 #define interest_year "<p>.* ([0-9]{4})</p>"
 #define interest_single_item "<a href=\"/film/([0-9]+-)([^/]*)/zajimavosti/"
-#define interest_single_year "<p class=\"origin\">[^,]*, ([^,]*),"
+#define interest_single_year "<p class=\"origin\">[^,]*, ([0-9]{4}),.*</p>"
 int ParseSearch(const char * html, struct SearchResult * p)
 {
 	string line,pomocna;
@@ -374,27 +378,34 @@ int ParseSearch(const char * html, struct SearchResult * p)
 						state = S_LOOK4IDNAME; // Dal uz neni nic, jen nazev a id dalsiho filmu
 					}
 					break;
-				default: // Vcetne S_UNKNOWN
-					if (line.find(s_results_begin) != string::npos) {
-						// Az do ted to bylo nezajimavy
-						state = S_LOOK4IDNAME;
-					}else if (regexec(&re_interest_single_item, line.c_str(), 4, pmatch, 0) == 0) {
-						// Nalezeno 'id' a 'name' filmu
+				case S_LOOK4SINGLE_IDNAME:
+					if (regexec(&re_interest_single_item, line.c_str(), 4, pmatch, 0) == 0) {
+						// Nalezeno 'id' a 'name' single filmu
 						p->results[nResults].name = strdup(line.substr(pmatch[2].rm_so,pmatch[2].rm_eo-pmatch[2].rm_so).c_str());
 						pomocna=line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so);
 						pomocna.append(line.substr(pmatch[2].rm_so,pmatch[2].rm_eo-pmatch[2].rm_so));
 						p->results[nResults++].id = strdup(pomocna.c_str());
-					}else if (regexec(&re_interest_single_year, line.c_str(), 3, pmatch, 0) == 0) {
-						// Nalezen rok filmu
-						p->results[nResults].year = atoi(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
+						state = S_HOTOVO; // Dal uz neni treba nic hledat
 					}
-
-
+					break;
+				default: // Vcetne S_UNKNOWN a S_LOOK4SINGLE_YEAR
+					// TODO: Spolehlive rozlisit zda jde o vysledek hledani nebo detail filmu (coz je stav kdy csfd.cz najde jen jeden film)
+					//       Pak by se dalo pouzit vyhledavani nazvu filmu stejne jako v ParseInfo() = mel by spravne diakritiku a tak.
+					if (line.find(s_results_begin) != string::npos) {
+						state = S_LOOK4IDNAME;
+					} else if (regexec(&re_interest_single_year, line.c_str(), 2, pmatch, 0) == 0) {
+						// Nalezen rok single filmu = technicky jde o S_LOOK4SINGLE_YEAR
+						p->results[nResults].year = atoi(line.substr(pmatch[1].rm_so,pmatch[1].rm_eo-pmatch[1].rm_so).c_str());
+						state = S_LOOK4SINGLE_IDNAME;
+					}
 			}
 
-			if (state != S_UNKNOWN && line.find(s_results_ends) != string::npos) {
+			if (state == S_LOOK4IDNAME && line.find(s_results_ends) != string::npos)
+				state = S_HOTOVO; // Vypada to silene, ale alespon clovek vi, ze pokud je S_HOTOVO, tak slo vsechno podle planu
+
+			if (state == S_HOTOVO) {
 				// Dal uz neni nic zajimaveho
-				break; // To je break toho while (myfile.good()) { ... }
+				break;
 			}
 		}
 		myfile.close();
@@ -407,6 +418,9 @@ int ParseSearch(const char * html, struct SearchResult * p)
 	regfree(&re_interest_year);
 	regfree(&re_interest_single_year);
 	p->nResults=nResults;
+
+	printf("[ CSFD ] search done (%d)\n", state);
+
 	return nResults;
 }
 
