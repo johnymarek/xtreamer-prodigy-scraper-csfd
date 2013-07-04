@@ -4,6 +4,8 @@ MYSTRIP = strip
 MYRANLIB = ranlib
 TEST = jb
 
+SVNDEV = -D'SVN_REV="$(shell svnversion -n .)"'
+
 MYDEFS          =
 rm              = /bin/rm -f
 cp              = /bin/cp -f
@@ -15,7 +17,7 @@ LIBNAME         = libresult.a
 
 WARNING = -Wall
 
-override CFLAGS += $(INCLUDES) $(DEFINES) -DSYS_UNIX=1 $(MYDEFS) -g
+override CFLAGS += $(SVNDEV) $(INCLUDES) $(DEFINES) -DSYS_UNIX=1 $(MYDEFS) -g
 
 
 SRCS		= result.cpp

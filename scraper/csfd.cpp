@@ -414,6 +414,12 @@ int main(int argc, char *argv[]) {
 	int c;
 	int ret = -1;
 
+	cout << "csfd scrapper";
+#ifdef SVN_REV
+	cout << " (svn rev " << SVN_REV << ")";
+#endif
+	cout << endl;
+
 	while((c = getopt(argc, argv, "sl:k:o:")) != -1) {
 		switch(c) {
 			case 's':
