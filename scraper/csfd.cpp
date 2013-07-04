@@ -35,10 +35,12 @@ using namespace std;
 
 #define S_HOTOVO		255
 
-/* Stavy pri ziskavani infa o filmu */
-/* U dat, ktera jdou ziskat rovnou z jednoho radku, a ten radek se da najit pomerne slusne, tam je pouzit pouze I_LOOK4*
+/* Stavy pri ziskavani infa o filmu:
+ * U dat, ktera jdou ziskat rovnou z jednoho radku, a ten radek se da najit pomerne slusne, tam je pouzit pouze I_LOOK4*
  * U viceradkovych/vicezaznamovych dat, je I_LOOK4* pouzit pro preskoceni balastu az na misto kde zacinaji data
  * a I_GETTING* je pro ziskavani radek kde se potrebna data nachazeji
+ *
+ * Poradi zde odpovida poradi v jakem je to k nalezeni v html
  */
 #define I_UNKNOWN		0
 #define I_LOOK4POSTER		1
@@ -190,6 +192,7 @@ int ParseInfo(const char * html, struct InfoResult * p)
 			getline(myfile,line);
 
 			switch (state) {
+				// Nejprve jsou I_LOOK4*, to kvuli moznosti cucet i do nasledujiciho I_LOOK4 kdyz dana vec neni k mani
 				case I_LOOK4POSTER:
 					if (reg_match(re_poster, line, 1, reg_fields)) {
 						if (reg_fields[1].find("http", 0, 4) != 0)
@@ -203,14 +206,6 @@ int ParseInfo(const char * html, struct InfoResult * p)
 					if (line.find(i_name_begin) != string::npos) {
 						temp_string = line;
 						state = I_GETTING_NAME;
-					}
-					break;
-				case I_GETTING_NAME:
-					temp_string.append(line);
-					if (line.find(i_name_end) != string::npos) {
-						if (reg_match(re_name_strip, temp_string, 1, reg_fields))
-							p->name = strdup(RemoveString(reg_fields[1], "<", ">").c_str());
-						state = I_LOOK4GENRE;
 					}
 					break;
 				case I_LOOK4GENRE:
@@ -233,18 +228,49 @@ int ParseInfo(const char * html, struct InfoResult * p)
 						state = I_GETTING_DIRECTOR;
 					}
 					break;
+				case I_LOOK4ACTORS:
+					if (line.find(i_actors_begin) != string::npos) {
+						temp_string.clear();
+						state = I_GETTING_ACTORS;
+					}
+					break;
+				case I_LOOK4COVERS:
+				case I_LOOK4OVERVIEW:
+					// Pozor, covers se vubec nemusi vyskytovat. Koukam zaroven i na zacatek overview
+					if (line.find(i_covers_begin) != string::npos)
+						state = I_GETTING_COVERS;
+
+					if (line.find(i_overview_begin) != string::npos) {
+						temp_string.clear();
+						state = I_GETTING_OVERVIEW;
+					}
+					break;
+				case I_LOOK4FANART:
+				case I_LOOK4RATE:
+					// Pozor, fanart se nemusi vubec vyskytovat. Koukam zaroven i na zacatek ratingu
+					if (line.find(i_fanart_begin) != string::npos)
+						state = I_GETTING_FANART;
+
+					if (reg_match(re_rate, line, 1, reg_fields)) {
+						p->rate = atoi(reg_fields[1].c_str());
+						state = I_HOTOVO;
+					}
+					break;
+				// Tady zacinaji I_GETTING_*
+				case I_GETTING_NAME:
+					temp_string.append(line);
+					if (line.find(i_name_end) != string::npos) {
+						if (reg_match(re_name_strip, temp_string, 1, reg_fields))
+							p->name = strdup(RemoveString(reg_fields[1], "<", ">").c_str());
+						state = I_LOOK4GENRE;
+					}
+					break;
 				case I_GETTING_DIRECTOR:
 					temp_string.append(line);
 					if (line.find(i_director_end) != string::npos) {
 						if (reg_match(re_director_strip, temp_string, 1, reg_fields))
 							p->director=strdup(reg_fields[1].c_str());
 						state = I_LOOK4ACTORS;
-					}
-					break;
-				case I_LOOK4ACTORS:
-					if (line.find(i_actors_begin) != string::npos) {
-						temp_string.clear();
-						state = I_GETTING_ACTORS;
 					}
 					break;
 				case I_GETTING_ACTORS:
@@ -257,15 +283,6 @@ int ParseInfo(const char * html, struct InfoResult * p)
 						state = I_LOOK4COVERS;
 					} else {
 						temp_string.append(line);
-					}
-					break;
-				case I_LOOK4COVERS:
-					if (line.find(i_covers_begin) != string::npos)
-						state = I_GETTING_COVERS;
-					// Pozor, covers se vubec nemusi vyskytovat. Koukam zaroven i na zacatek overview
-					if (line.find(i_overview_begin) != string::npos) {
-						temp_string.clear();
-						state = I_GETTING_OVERVIEW;
 					}
 					break;
 				case I_GETTING_COVERS:
@@ -283,12 +300,6 @@ int ParseInfo(const char * html, struct InfoResult * p)
 						}
 					}
 					break;
-				case I_LOOK4OVERVIEW:
-					if (line.find(i_overview_begin) != string::npos) {
-						temp_string.clear();
-						state = I_GETTING_OVERVIEW;
-					}
-					break;
 				case I_GETTING_OVERVIEW:
 					temp_string.append(line);
 					if (line.find(i_overview_end) != string::npos) {
@@ -302,15 +313,6 @@ int ParseInfo(const char * html, struct InfoResult * p)
 						state = I_LOOK4FANART;
 					}
 					break;
-				case I_LOOK4FANART:
-					if (line.find(i_fanart_begin) != string::npos)
-						state = I_GETTING_FANART;
-					// Pozor, fanart se nemusi vubec vyskytovat. Koukam zaroven i na zacatek ratingu
-					if (reg_match(re_rate, line, 1, reg_fields)) {
-						p->rate = atoi(reg_fields[1].c_str());
-						state = I_HOTOVO;
-					}
-					break;
 				case I_GETTING_FANART:
 					if (line.find(i_fanart_end) != string::npos) {
 						state = I_LOOK4RATE;
@@ -322,12 +324,6 @@ int ParseInfo(const char * html, struct InfoResult * p)
 							p->fanart_preview[fanart_i] = strdup(reg_fields[1].c_str());
 							p->fanart[fanart_i++] = strdup(reg_fields[1].c_str());
 						}
-					}
-					break;
-				case I_LOOK4RATE:
-					if (reg_match(re_rate, line, 1, reg_fields)) {
-						p->rate = atoi(reg_fields[1].c_str());
-						state = I_HOTOVO;
 					}
 					break;
 				default: // Vcetne I_UNKNOWN
