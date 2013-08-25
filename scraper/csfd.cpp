@@ -461,13 +461,16 @@ int main(int argc, char *argv[]) {
 #endif
 	cout << endl;
 
-	while((c = getopt(argc, argv, "sl:k:o:")) != -1) {
+	while((c = getopt(argc, argv, "svl:k:o:")) != -1) {
 		switch(c) {
 			case 's':
 				do_search = true;
 				break;
 			case 'l':
 				strncpy(language, optarg, 32);
+				break;
+			case 'v':
+				printf("SVN verze:%s\n",SVN_REV);
 				break;
 			case 'k':
 				strncpy(keyword, optarg, 255);
@@ -504,6 +507,8 @@ int main(int argc, char *argv[]) {
 					if (result.results[i].id)
 						free(result.results[i].id);
 				}
+			}else{
+			cout << "Nepodarilo se mi ParseSearch";
 			}
 			unlink(TMPFILE);
 		}
