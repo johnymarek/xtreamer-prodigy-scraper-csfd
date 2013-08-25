@@ -61,7 +61,7 @@ using namespace std;
 #define I_LOOK4RATE		16
 
 #define I_HOTOVO		255
-
+bool do_debug = false;
 string RemoveString(const string s, const string start, const string end="") {
 	// Oproti puvodni fci v csfd.cpp tahle nemeni vstupni retezec, ale vraci novy
 	string result = s;
@@ -126,7 +126,12 @@ const size_t reg_match(regex_t &regexp, string source, size_t nmatch, vector <st
 	} 
 	return 0;
 }
-
+void Debug(const char *string)
+{
+	if (do_debug){
+		printf ("DEBUG: %s\n",string);
+	}
+}
 
 // Jednoradkova hledani: jsou ve tvaru i_* (bez suffixu) a jsou pouzite pro regexp
 // Viceradkova hlednani: i_*_begin a i_*_end jsou pouzity pro find(), i_*_strip jsou pouzity regexp
@@ -146,7 +151,7 @@ const size_t reg_match(regex_t &regexp, string source, size_t nmatch, vector <st
 #define i_covers_begin "<h3>Plakáty</h3>"
 #define i_covers_end "</tr>"
 #define i_covers_strip "url\\('(.*)\\?h180'\\)"
-#define i_overview_begin "<h3>Obsah </h3>"
+#define i_overview_begin "<h3>Obsah"
 #define i_overview_end "</li>"
 #define i_overview_strip "alt=\"Odrážka\"[[:space:]]*class=\"dot( hidden)?\"/>[[:space:]]*(.*)<span class=\"source( user)?\">(.*)</span>"
 #define i_fanart_begin "Galerie\t<span class=\"count\">"
@@ -236,11 +241,13 @@ int ParseInfo(const char * html, struct InfoResult * p)
 					break;
 				case I_LOOK4COVERS:
 				case I_LOOK4OVERVIEW:
+					Debug("LOOK4 Covers ci Overview");
 					// Pozor, covers se vubec nemusi vyskytovat. Koukam zaroven i na zacatek overview
 					if (line.find(i_covers_begin) != string::npos)
 						state = I_GETTING_COVERS;
 
 					if (line.find(i_overview_begin) != string::npos) {
+						Debug("Nalezl jsem zacatek overview");
 						temp_string.clear();
 						state = I_GETTING_OVERVIEW;
 					}
@@ -274,6 +281,7 @@ int ParseInfo(const char * html, struct InfoResult * p)
 					}
 					break;
 				case I_GETTING_ACTORS:
+Debug("Hledam I_GETTING_ACTORS");
 					if (line.find(i_actors_end) != string::npos) {
 						fields = split(temp_string, ",", split::no_empties);
 						for (i = 0; i < (fields.size() < JB_SCPR_MAX_ACTOR ? fields.size() : JB_SCPR_MAX_ACTOR); i++) {
@@ -286,6 +294,7 @@ int ParseInfo(const char * html, struct InfoResult * p)
 					}
 					break;
 				case I_GETTING_COVERS:
+						Debug("Getting Covers");
 					if (line.find(i_covers_end) != string::npos) {
 						state = I_LOOK4OVERVIEW;
 					} else {
@@ -461,10 +470,13 @@ int main(int argc, char *argv[]) {
 #endif
 	cout << endl;
 
-	while((c = getopt(argc, argv, "svl:k:o:")) != -1) {
+	while((c = getopt(argc, argv, "dsvl:k:o:")) != -1) {
 		switch(c) {
 			case 's':
 				do_search = true;
+				break;
+			case 'd':
+				do_debug = true;
 				break;
 			case 'l':
 				strncpy(language, optarg, 32);
