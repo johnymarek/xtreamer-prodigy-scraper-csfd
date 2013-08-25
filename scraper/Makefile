@@ -28,8 +28,9 @@ CSFD		+= csfd
 
 BINARIES  = $(TMDB) $(TOREC) $(CSFD)
 
+SVNDEV = -D'SVN_REV="$(shell svnversion -n .)"'
 #CFLAGS+=-I../lib_file/tinyxml/ 
-CFLAGS+=-I../../libtinyxml-read-only/tinyxml -static
+CFLAGS+=-I../../libtinyxml-read-only/tinyxml -static $(SVNDEV)
 #CFLAGS+=-std=c++0x
 LDFLAGS=-L../../libtinyxml-read-only/lib
 #LDFLAGS=-L../lib_file/lib/
