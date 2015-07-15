@@ -1,0 +1,1 @@
+Plugin to retrieve information from csfd.cz
